@@ -47,15 +47,9 @@ class AuthRoute implements Routes {
     this.router.post(`${this.path}/otp`, deviceMiddleware, this.authController.validateOtp);
     this.router.post(`${this.path}/username`, this.authController.validateUsername);
 
+    this.router.post(`${this.path}/resend_otp`, deviceMiddleware, this.authController.resendOtp);
+
     this.router.post(`${this.path}/signup`, deviceMiddleware, upload.single('avatar'), this.authController.signUp);
-
-    // this.router.get(`${this.path}/validate_username`, this.authController.validateUsername);
-
-    // this.router.get(`${this.path}/get_country_by_ip`, countryMiddleware, this.authController.getCountryByIp);
-
-    // this.router.post(`${this.path}/send_otp`, this.authController.sendOtp);
-
-    // this.router.post(`${this.path}/signup_login`, deviceMiddleware, this.authController.signUpOrLogIn);
 
     this.router.post(`${this.path}/login_auth_token`, deviceMiddleware, this.authController.logInWithAuthToken);
 

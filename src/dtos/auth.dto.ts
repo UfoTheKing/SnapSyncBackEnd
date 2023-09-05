@@ -10,6 +10,9 @@ export class LogInDto {
 export class SignUpDto {
   sessionId: string;
   file: MulterUploadFile;
+
+  lt: number | null; // Indica la latitudine del luogo in cui l'utente si è registrato
+  lg: number | null; // Indica la longitudine del luogo in cui l'utente si è registrato
 }
 
 export class LogInPhoneNumberDto {

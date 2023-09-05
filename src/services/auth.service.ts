@@ -4,10 +4,10 @@ import { HttpException } from '@exceptions/HttpException';
 import { DataStoredInToken, LogInResponse, TokenData } from '@interfaces/auth.interface';
 import { User } from '@interfaces/users.interface';
 import { Users } from '@models/users.model';
-import { isEmpty } from '@utils/util';
+import { generateRandomKey, isEmpty } from '@utils/util';
 import { phone } from 'phone';
-import { MAX_USER_DEVICES, MIN_AGE } from '@/utils/costants';
-import { AuthDto, LogInDto, LogInPhoneNumberDto, LogInWithAuthTokenDto, SignUpDto } from '@/dtos/auth.dto';
+import { AVATAR_SIZE, MIN_AGE } from '@/utils/costants';
+import { LogInPhoneNumberDto, LogInWithAuthTokenDto, SignUpDto } from '@/dtos/auth.dto';
 import { Device } from '@/interfaces/devices.interface';
 import { UserDevice } from '@/interfaces/users_devices.interface';
 import { Devices } from '@/models/devices.model';
@@ -16,16 +16,8 @@ import { UsersDevices } from '@/models/users_devices.model';
 import sha256 from 'crypto-js/sha256';
 import { AuthTokens } from '@/models/auth_tokens.model';
 import { boolean } from 'boolean';
-import {
-  S3Client,
-  PutObjectCommand,
-  PutObjectCommandInput,
-  PutObjectCommandOutput,
-  GetObjectCommandInput,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, PutObjectCommandInput, PutObjectCommandOutput } from '@aws-sdk/client-s3';
 import { S3_ACCESS_KEY_ID, S3_BUCKET_NAME, S3_BUCKET_REGION, S3_SECRET_ACCESS_KEY } from '@/config';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ExpoPushTokens } from '@/models/expo_push_tokens.model';
 import UserService from './users.service';
 import { AuthUsers } from '@/models/auth_users.model';
@@ -103,6 +95,15 @@ class AuthService {
     return true;
   };
 
+  public resendOtp = async (phoneNumber: string): Promise<void> => {
+    if (!phoneNumber) throw new HttpException(422, 'Phone number is required');
+
+    const phoneResults = phone(phoneNumber);
+    if (!phoneResults.isValid) throw new HttpException(422, 'Phone number is not valid');
+
+    // TODO: resend OTP con twilio
+  };
+
   public loginWithPhoneNumber = async (data: LogInPhoneNumberDto, device: Device | null): Promise<LogInResponse> => {
     if (isEmpty(data)) throw new HttpException(400, 'Missing data');
 
@@ -166,6 +167,7 @@ class AuthService {
       user: {
         id: findUserByPhoneNumber.id,
         username: findUserByPhoneNumber.username,
+        fullName: findUserByPhoneNumber.fullName,
         biography: findUserByPhoneNumber.biography,
         profilePictureUrl: profilePictureUrl,
         isVerified: boolean(findUserByPhoneNumber.isVerified),
@@ -191,6 +193,13 @@ class AuthService {
     const authUser = await AuthUsers.query().whereNotDeleted().where('sessionId', data.sessionId).first();
     if (!authUser) throw new HttpException(404, 'Ops! Something went wrong');
 
+    // Controllo se l'utente ha eseguito tutti i passaggi in modo corretto
+    if (!authUser.fullName) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
+    if (!authUser.dateOfBirth) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
+    if (!authUser.phoneNumber) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
+    if (!boolean(authUser.isPhoneNumberVerified)) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
+    if (!authUser.username) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
+
     // Controllo se l'utente esiste già con lo stesso username
     const findUserByUsername = await Users.query().whereNotDeleted().where('username', authUser.username.toLocaleLowerCase().trim()).first();
     if (findUserByUsername) throw new HttpException(409, 'Username already exists');
@@ -199,18 +208,20 @@ class AuthService {
     const findUserByPhoneNumber = await Users.query().whereNotDeleted().where('phoneNumber', authUser.phoneNumber).first();
     if (findUserByPhoneNumber) throw new HttpException(409, 'Phone number already exists');
 
+    // Controllo se il numero di telefono è valido
+    const phoneResults = phone(authUser.phoneNumber);
+    if (!phoneResults.isValid) throw new HttpException(422, 'Phone number is not valid');
+
     // Faccio l'upload dell'immagine del profilo
     const originalHeight = sizeOf(data.file.path).height;
     const originalWidth = sizeOf(data.file.path).width;
     if (!originalHeight || !originalWidth) throw new HttpException(400, 'Invalid image');
 
-    // L'immagine deve essere quadrata 360x360
-    const AVATAR_SIZE = 360;
     // Salvo l'immagine nella cartella uploads/avatars
-    const key = `avatars/${this.generateRandomKey()}`;
+    const key = `avatars/${generateRandomKey()}`;
 
     if (originalHeight !== AVATAR_SIZE || originalWidth !== AVATAR_SIZE) {
-      const resizedImageWithoutAlpha = await sharp(data.file.path).resize(AVATAR_SIZE, AVATAR_SIZE).toBuffer();
+      const resizedImageWithoutAlpha = await sharp(data.file.path).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
 
       const params: PutObjectCommandInput = {
         Bucket: S3_BUCKET_NAME,
@@ -244,13 +255,18 @@ class AuthService {
     // Creo l'utente
     const trx = await Users.startTransaction();
 
+    let phoneNumberOnlyDigits = authUser.phoneNumber.replace(/\D/g, ''); // Rimuovo tutti i caratteri non numerici
     try {
       createdUser = await Users.query(trx).insert({
         username: authUser.username.toLocaleLowerCase().trim(),
         phoneNumber: authUser.phoneNumber,
+        phoneNumberOnlyDigits: phoneNumberOnlyDigits,
+        phoneNumberCountryIso2: phoneResults.countryIso2,
         dateOfBirth: authUser.dateOfBirth,
         fullName: authUser.fullName,
         profilePicImageKey: key,
+        longitude: data.lg,
+        latitude: data.lt,
       });
 
       if (device) createDevice = await Devices.query(trx).whereNotDeleted().findById(device.id);
@@ -302,6 +318,7 @@ class AuthService {
         user: {
           id: createdUser.id,
           username: createdUser.username,
+          fullName: createdUser.fullName,
           biography: createdUser.biography,
           profilePictureUrl: profilePictureUrl,
           isVerified: boolean(createdUser.isVerified),
@@ -316,215 +333,6 @@ class AuthService {
       await trx.rollback();
       throw error;
     }
-  };
-
-  public signUpOrLogIn = async (data: AuthDto, device: Device | null): Promise<LogInResponse> => {
-    if (isEmpty(data)) throw new HttpException(400, 'Missing data');
-
-    // Controllo se l'utente esiste
-    const findUserByUsername = await Users.query().whereNotDeleted().where('username', data.username.toLocaleLowerCase().trim()).first();
-    if (!findUserByUsername) {
-      // L'utente deve aver inserito yearOfBirth, monthOfBirth, dayOfBirth ed il phoneNumber
-      if (!data.yearOfBirth) throw new HttpException(422, 'Year of birth is required');
-      if (!data.monthOfBirth) throw new HttpException(422, 'Month of birth is required');
-      if (!data.dayOfBirth) throw new HttpException(422, 'Day of birth is required');
-
-      if (isNaN(data.yearOfBirth) || isNaN(data.monthOfBirth) || isNaN(data.dayOfBirth)) throw new HttpException(400, 'Invalid date of birth');
-
-      const isValidDateOfBirth = await this.validateDateOfBirth(data.yearOfBirth, data.monthOfBirth, data.dayOfBirth);
-      if (!isValidDateOfBirth) throw new HttpException(400, 'Date of birth is not valid');
-      const dateOfBirth: Date = new Date(data.yearOfBirth, data.monthOfBirth - 1, data.dayOfBirth, 20, 12, 12, 12); // Metto un orario fisso per evitare problemi con il fuso orario
-
-      // Controllo se il numero di telefono è valido
-      if (!data.phoneNumber) throw new HttpException(422, 'Phone number is required');
-      const phoneResults = phone(data.phoneNumber);
-      if (!phoneResults.isValid) throw new HttpException(400, 'Invalid phone number');
-
-      // Controllo se questo numero di telefono è già stato usato
-      const findUserByPhoneNumber = await Users.query().whereNotDeleted().where('phoneNumber', phoneResults.phoneNumber).first();
-
-      // Controllo se l'utente ha inserito il codice di verifica del numero di telefono
-      if (!data.phoneNumberVerificationCode) throw new HttpException(422, 'Phone number verification code is required');
-
-      // TODO: controllare se il codice di verifica del numero di telefono è valido
-
-      // Creo l'utente
-      const trx = await Users.startTransaction();
-
-      var createdUser: User;
-      var createdUserDevice: UserDevice;
-      var createDevice: Device;
-      var tokenData: TokenData;
-      var accessToken: string;
-
-      try {
-        if (findUserByPhoneNumber) {
-          createdUser = findUserByPhoneNumber;
-        } else {
-          createdUser = await Users.query(trx).insert({
-            username: data.username.toLocaleLowerCase().trim(),
-            phoneNumber: phoneResults.phoneNumber,
-            dateOfBirth: dateOfBirth,
-          });
-        }
-
-        if (device) createDevice = await Devices.query(trx).whereNotDeleted().findById(device.id);
-        else {
-          createDevice = await Devices.query(trx).insert({
-            uuid: uuidv4(),
-          });
-        }
-
-        const findUserDevice = await UsersDevices.query(trx)
-          .whereNotDeleted()
-          .where('userId', createdUser.id)
-          .where('deviceId', createDevice.id)
-          .first();
-        if (findUserDevice) createdUserDevice = findUserDevice;
-        else {
-          createdUserDevice = await UsersDevices.query(trx).insert({
-            userId: createdUser.id,
-            deviceId: createDevice.id,
-          });
-        }
-
-        // Creo il token di autenticazione
-        tokenData = this.createToken(createdUser);
-
-        const selector = uuidv4();
-        const plainTextValidator = uuidv4();
-        const hashedValidator = await sha256(plainTextValidator).toString();
-        accessToken = `${selector}:${plainTextValidator}`;
-
-        await AuthTokens.query(trx).insert({
-          selector: selector,
-          hashedValidator: hashedValidator,
-
-          userId: createdUser.id,
-          deviceId: createDevice.id,
-          userDeviceId: createdUserDevice.id,
-
-          lastUsedAt: new Date(),
-        });
-
-        await trx.commit();
-      } catch (error) {
-        await trx.rollback();
-        throw error;
-      }
-
-      let r: LogInResponse = {
-        user: {
-          id: createdUser.id,
-          username: createdUser.username,
-          biography: createdUser.biography,
-          profilePictureUrl: null,
-          isVerified: boolean(createdUser.isVerified),
-        },
-        device: createDevice,
-        accessToken: accessToken,
-        tokenData: tokenData,
-      };
-
-      return r;
-    } else {
-      // L'utente esiste: devo solo controllare se ha inserito il codice di verifica del numero di telefono
-      if (!data.phoneNumberVerificationCode) throw new HttpException(422, 'Phone number verification code is required');
-
-      // TODO: controllare se il codice di verifica del numero di telefono è valido
-
-      const trx = await AuthTokens.startTransaction();
-
-      var createdUser: User;
-      var createdUserDevice: UserDevice;
-      var createDevice: Device;
-
-      var tokenData: TokenData = this.createToken(findUserByUsername);
-
-      const selector = uuidv4();
-      const plainTextValidator = uuidv4();
-      const hashedValidator = await sha256(plainTextValidator).toString();
-      var accessToken: string = `${selector}:${plainTextValidator}`;
-
-      try {
-        if (device) createDevice = await Devices.query(trx).whereNotDeleted().findById(device.id);
-        else {
-          createDevice = await Devices.query(trx).insert({
-            uuid: uuidv4(),
-          });
-        }
-
-        const findUserDevice = await UsersDevices.query(trx)
-          .whereNotDeleted()
-          .where('userId', findUserByUsername.id)
-          .where('deviceId', createDevice.id)
-          .first();
-        if (findUserDevice) createdUserDevice = findUserDevice;
-        else {
-          createdUserDevice = await UsersDevices.query(trx).insert({
-            userId: findUserByUsername.id,
-            deviceId: createDevice.id,
-          });
-        }
-
-        await AuthTokens.query(trx).insert({
-          selector: selector,
-          hashedValidator: hashedValidator,
-
-          userId: findUserByUsername.id,
-          deviceId: createDevice.id,
-          userDeviceId: createdUserDevice.id,
-
-          lastUsedAt: new Date(),
-        });
-
-        await trx.commit();
-      } catch (error) {
-        await trx.rollback();
-        throw error;
-      }
-
-      let profilePictureUrl: string | null = null;
-      if (findUserByUsername.profilePicImageKey) {
-        let params: GetObjectCommandInput = {
-          Bucket: S3_BUCKET_NAME,
-          Key: findUserByUsername.profilePicImageKey,
-        };
-
-        const command = new GetObjectCommand(params);
-        const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
-
-        profilePictureUrl = url;
-      }
-
-      let r: LogInResponse = {
-        user: {
-          id: findUserByUsername.id,
-          username: findUserByUsername.username,
-          biography: findUserByUsername.biography,
-          profilePictureUrl: profilePictureUrl,
-          isVerified: boolean(findUserByUsername.isVerified),
-        },
-        device: createDevice,
-        accessToken: accessToken,
-        tokenData: tokenData,
-      };
-
-      return r;
-    }
-  };
-
-  public sendOtp = async (phoneNumber: string): Promise<string> => {
-    if (!phoneNumber) throw new HttpException(422, 'Phone number is required');
-
-    const phoneResults = phone(phoneNumber);
-    if (!phoneResults.isValid) throw new HttpException(422, 'Phone number is not valid');
-
-    // TODO: send OTP con twilio
-
-    let message = `Enter the code we sent to ${phoneNumber}`;
-
-    return message;
   };
 
   public async loginWithAuthToken(userData: LogInWithAuthTokenDto, device: Device): Promise<LogInResponse> {
@@ -576,23 +384,13 @@ class AuthService {
 
     const accessToken = `${oldSelector}:${newPlainTextValidator}`;
 
-    let profilePictureUrl: string | null = null;
-    if (findUser.profilePicImageKey) {
-      let params: GetObjectCommandInput = {
-        Bucket: S3_BUCKET_NAME,
-        Key: findUser.profilePicImageKey,
-      };
-
-      const command = new GetObjectCommand(params);
-      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
-
-      profilePictureUrl = url;
-    }
+    let profilePictureUrl: string = await new UserService().findUserProfilePictureUrlById(findUser.id);
 
     let LogInResponse: LogInResponse = {
       user: {
         id: findUser.id,
         username: findUser.username,
+        fullName: findUser.fullName,
         biography: findUser.biography,
         profilePictureUrl: profilePictureUrl,
         isVerified: boolean(findUser.isVerified),
@@ -633,10 +431,6 @@ class AuthService {
 
   public createCookie(tokenData: TokenData): string {
     return `Authorization=${tokenData.token}; HttpOnly; Max-Age=${tokenData.expiresIn};`;
-  }
-
-  private generateRandomKey() {
-    return Date.now() + '-' + Math.random().toString(36).substring(2, 15);
   }
 }
 

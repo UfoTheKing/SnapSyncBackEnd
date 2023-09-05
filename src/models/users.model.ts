@@ -17,6 +17,10 @@ export class Users extends softDelete(Model) implements User {
   profilePicImageKey!: string;
 
   phoneNumber!: string; // In formato internazionale, esempio: +393401234567
+  phoneNumberOnlyDigits!: string; // Solo cifre, esempio: 3401234567
+  phoneNumberCountryIso2!: string | null; // Codice ISO 3166-1 alpha-2 del paese, esempio: IT
+  latitude!: number | null; // Indica la latitudine del luogo in cui l'utente si è registrato
+  longitude!: number | null; // Indica la longitudine del luogo in cui l'utente si è registrato
 
   dateOfBirth!: Date; // Data di nascita
 

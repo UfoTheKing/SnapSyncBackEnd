@@ -18,13 +18,13 @@ export interface LogInResponse {
   user: {
     id: number;
     username: string;
+    fullName: string;
     biography: string | null;
-    profilePictureUrl: string | null;
+    profilePictureUrl: string;
     isVerified: boolean;
-  }
+  };
   tokenData: TokenData;
   accessToken: string; // selector:validator
-  
 }
 
 export interface MulterUploadFile {

@@ -18,6 +18,7 @@ class FriendshipsRoute implements Routes {
 
     this.router.get(`${this.path}/incoming_requests`, authMiddleware, this.friendshipsController.getIncomingRequests);
     this.router.get(`${this.path}/outgoing_requests`, authMiddleware, this.friendshipsController.getOutgoingRequests);
+    this.router.post(`${this.path}/suggest`, authMiddleware, this.friendshipsController.suggestFriends);
 
     this.router.get(`${this.path}/show/:userId`, authMiddleware, blockedMiddleware, this.friendshipsController.showFriendship);
     this.router.post(`${this.path}/show_many`, authMiddleware, this.friendshipsController.showManyFriendships);

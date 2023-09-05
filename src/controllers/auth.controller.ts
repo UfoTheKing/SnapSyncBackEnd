@@ -3,13 +3,15 @@ import AuthService from '@services/auth.service';
 import * as yup from 'yup';
 import UserService from '@/services/users.service';
 import { HttpException } from '@/exceptions/HttpException';
-import { AuthDto, LogInPhoneNumberDto, LogInWithAuthTokenDto, SignUpDto } from '@/dtos/auth.dto';
-import { RequestWithCountry, RequestWithDevice, RequestWithFile, RequestWithUser } from '@/interfaces/auth.interface';
-import { MissingParamsException } from '@/exceptions/MissingParamsException';
+import { LogInPhoneNumberDto, LogInWithAuthTokenDto, SignUpDto } from '@/dtos/auth.dto';
+import { RequestWithDevice, RequestWithFile, RequestWithUser } from '@/interfaces/auth.interface';
 import { v4 as uuidv4 } from 'uuid';
 import AuthUserService from '@/services/auth_users.service';
 import { CreateAuthUserDto, UpdateAuthUserDto } from '@/dtos/auth_users.dto';
 import moment from 'moment';
+import { WebServiceClient } from '@maxmind/geoip2-node';
+import { MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY } from '@/config';
+import * as ip from 'ip';
 
 class AuthController {
   public authService = new AuthService();
@@ -191,6 +193,25 @@ class AuthController {
     }
   };
 
+  public resendOtp = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const validationSchema = yup.object().shape({
+      sessionId: yup.string().required(),
+    });
+
+    try {
+      await validationSchema.validate(req.body, { abortEarly: false });
+
+      const findSession = await this.authUsersService.findAuthUserBySessionId(req.body.sessionId);
+      if (!findSession) throw new HttpException(404, 'Session not found');
+
+      await this.authService.resendOtp(findSession.phoneNumber);
+
+      res.status(200).json({ message: 'ok' });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   public validateUsername = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const validationSchema = yup.object().shape({
       username: yup
@@ -243,74 +264,22 @@ class AuthController {
       const findSession = await this.authUsersService.findAuthUserBySessionId(data.sessionId);
       if (!findSession) throw new HttpException(404, 'Session not found');
 
+      if (ip.isPrivate(req.ip)) {
+        // IP PRIVATO -> Prendo le coordinate del paese di Casalmaggiore
+        data.lt = 44.983333;
+        data.lg = 10.433333;
+      } else {
+        const client = new WebServiceClient(MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY);
+        // Recupero la longitudine e la latitudine
+        const city = await client.city(req.ip);
+
+        data.lt = city && city.location ? city.location.latitude : null;
+        data.lg = city && city.location ? city.location.longitude : null;
+      }
+
       const r = await this.authService.signup(data, req.device);
 
       res.status(200).json(r);
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  public getCountryByIp = async (req: RequestWithCountry, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      if (!req.country) throw new HttpException(500, 'It is not possible to get the country from the IP address. Please try again later.');
-
-      res.status(200).json({ country: req.country });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  public signUpOrLogIn = async (req: RequestWithDevice, res: Response, next: NextFunction): Promise<void> => {
-    const validationSchema = yup.object().shape({
-      username: yup.string().required(),
-      phoneNumberVerificationCode: yup.string().required(),
-
-      phoneNumber: yup.string(),
-      yearOfBirth: yup.number(),
-      monthOfBirth: yup.number(),
-      dayOfBirth: yup.number(),
-    });
-    try {
-      const data: AuthDto = req.body;
-      await validationSchema.validate(data, { abortEarly: false });
-
-      const r = await this.authService.signUpOrLogIn(data, req.device);
-
-      res.status(200).json(r);
-
-      /**
-       * Il flusso di autenticazione prevede:
-       * 1. L'utente inserisce lo username.
-       * 2. Se lo username viene trovato nel DB, allora invio un OTP al numero di telefono associato.
-       * 2.1. Se lo username non viene trovato nel DB, allora faccio proseguire lo user con la registrazione.
-       * --------------------------------- SIGN UP ---------------------------------
-       * 3. L'utente inserisce la propria data di nascita.
-       * 4. L'utente inserisce il proprio numero di telefono.
-       * 5. Mando un OTP al numero di telefono inserito.
-       *
-       * --------------------------------- Si riusa il flusso di autenticazione per il login ---------------------------------
-       * 6. L'utente inserisce l'otp ricevuto.
-       * 7. Se l'otp è corretto, controllo se esiste già un utente con lo stesso numero di telefono.
-       * 8.1. Se esiste, allora faccio il login.
-       * 8.2. Se non esiste, allora faccio la registrazione e poi faccio il login.
-       */
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  public sendOtp = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const validationSchema = yup.object().shape({
-      phoneNumber: yup.string().required(),
-    });
-
-    try {
-      await validationSchema.validate(req.body, { abortEarly: false });
-
-      const m = await this.authService.sendOtp(req.body.phoneNumber);
-
-      res.status(200).json({ message: m });
     } catch (error) {
       next(error);
     }

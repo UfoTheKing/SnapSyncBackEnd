@@ -1,18 +1,32 @@
-import { S3_ACCESS_KEY_ID, S3_BUCKET_NAME, S3_BUCKET_REGION, S3_SECRET_ACCESS_KEY } from '@/config';
+import { DB_DATABASE, S3_ACCESS_KEY_ID, S3_BUCKET_NAME, S3_BUCKET_REGION, S3_SECRET_ACCESS_KEY } from '@/config';
+import { MulterUploadFile } from '@/interfaces/auth.interface';
 import { Biography, BiographyEntity } from '@/interfaces/user_profile.interface';
 import { BlockedUsers } from '@/models/blocked_users.model';
-import { GetObjectCommand, GetObjectCommandInput, S3Client } from '@aws-sdk/client-s3';
+import { AVATAR_SIZE } from '@/utils/costants';
+import { generateRandomKey } from '@/utils/util';
+import {
+  GetObjectCommand,
+  GetObjectCommandInput,
+  PutObjectCommand,
+  PutObjectCommandInput,
+  PutObjectCommandOutput,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { HttpException } from '@exceptions/HttpException';
-import { User } from '@interfaces/users.interface';
+import { SmallUser, User } from '@interfaces/users.interface';
 import { Users } from '@models/users.model';
+import sizeOf from 'image-size';
+import sharp from 'sharp';
+import { boolean } from 'boolean';
+import knex from '@/databases';
 
-const s3 = new S3Client({ 
+const s3 = new S3Client({
   credentials: {
-      accessKeyId: S3_ACCESS_KEY_ID,
-      secretAccessKey: S3_SECRET_ACCESS_KEY
+    accessKeyId: S3_ACCESS_KEY_ID,
+    secretAccessKey: S3_SECRET_ACCESS_KEY,
   },
-  region: S3_BUCKET_REGION
+  region: S3_BUCKET_REGION,
 });
 
 class UserService {
@@ -42,24 +56,19 @@ class UserService {
     return findUser;
   }
 
-  public async findUserProfilePictureUrlById(userId: number): Promise<string | null> {
+  public async findUserProfilePictureUrlById(userId: number): Promise<string> {
     const findOneUserData = await Users.query().whereNotDeleted().findById(userId);
     if (!findOneUserData) throw new HttpException(404, "User doesn't exist");
 
-    if (findOneUserData.profilePicImageKey) {
-      let params: GetObjectCommandInput = {
-          Bucket: S3_BUCKET_NAME,
-          Key: findOneUserData.profilePicImageKey,
-      }
+    let params: GetObjectCommandInput = {
+      Bucket: S3_BUCKET_NAME,
+      Key: findOneUserData.profilePicImageKey,
+    };
 
-      const command = new GetObjectCommand(params);
-      const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    const command = new GetObjectCommand(params);
+    const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
 
-      return url;
-    }
-
-    return null;
-
+    return url;
   }
 
   public async findUserProfileBiographyById(userId: number, loggedUserId: number): Promise<Biography | null> {
@@ -71,41 +80,223 @@ class UserService {
 
       let entities: BiographyEntity[] = [];
 
-      await Promise.all(words.map(async (word) => {
-        if (word.startsWith('@')) {
-          // Username
-          let username = word.substring(1);
+      await Promise.all(
+        words.map(async word => {
+          if (word.startsWith('@')) {
+            // Username
+            let username = word.substring(1);
 
-          try {
-            let user = await this.findUserByUsername(username);
+            try {
+              let user = await this.findUserByUsername(username);
 
-            let blockedUser = await BlockedUsers.query().whereNotDeleted().where('userId', findOneUserData.id).andWhere('blockedUserId', user.id).first();
-            if (blockedUser) return;
+              let blockedUser = await BlockedUsers.query().whereNotDeleted().where('userId', user.id).andWhere('blockedUserId', loggedUserId).first();
+              if (blockedUser) return;
 
-            entities.push({
-              type: 'user',
-              id: user.id,
-              text: user.username,
-            });
-          } catch (error) {
-            // Non esiste l'utente, non faccio nulla
-            return;
+              entities.push({
+                type: 'user',
+                id: user.id,
+                text: user.username,
+              });
+            } catch (error) {
+              // Non esiste l'utente, non faccio nulla
+              return;
+            }
           }
-        }
-      }));
+        }),
+      );
 
       let biography: Biography = {
         rawText: findOneUserData.biography,
         entities: entities,
-      }
+      };
 
       return biography;
     }
 
     return null;
   }
-}
 
-    
+  public async findUsersExcludingBlockedUsersByUserId(
+    userId: number,
+    page: number = 1,
+    count: number = 12,
+    query: string | null = null,
+    excludeUsersIds: Array<number> = [],
+  ): Promise<{
+    users: Array<SmallUser>;
+    pagination: {
+      page: number;
+      size: number;
+      total: number;
+      hasMore: boolean;
+    };
+  }> {
+    const StoredProcedureName = `${DB_DATABASE}.GetUsersExcludingBlockedUsers`;
+    const StoredProcedureNameNumberOfFriends = `${DB_DATABASE}.GetNumberUsersExcludingBlockedUsers`;
+
+    // Converto l'array in una stringa con gli id separati da virgola
+    let excludeUsersIdsString = excludeUsersIds.join(',');
+
+    let offsetRows = (page - 1) * count;
+    let limitRows = count;
+    const results = await knex.raw(
+      `CALL ${StoredProcedureName}(${userId}, ${limitRows}, ${offsetRows}, ${query ? "'" + query + "'" : null}, '${excludeUsersIdsString}')`,
+    );
+    const resultsNumber = await knex.raw(
+      `CALL ${StoredProcedureNameNumberOfFriends}(${userId}, ${query ? "'" + query + "'" : null}, '${excludeUsersIdsString}')`,
+    );
+
+    let responseResults: Array<{
+      id: number;
+      username: string;
+      fullName: string;
+      isVerified: boolean;
+      profilePictureUrl: string;
+    }> = [];
+    let responseResultsNumber: {
+      numberOfUsers: number;
+    } = {
+      numberOfUsers: 0,
+    };
+
+    if (results.length > 0 && results[0].length > 0) {
+      responseResults = results[0][0];
+    }
+
+    if (resultsNumber.length > 0 && resultsNumber[0].length > 0 && resultsNumber[0][0].length > 0) {
+      responseResultsNumber = resultsNumber[0][0][0].numUsers
+        ? {
+            numberOfUsers: resultsNumber[0][0][0].numUsers,
+          }
+        : { numberOfUsers: 0 };
+    }
+
+    let users: Array<SmallUser> = [];
+
+    if (responseResultsNumber.numberOfUsers > 0) {
+      await Promise.all(
+        responseResults.map(async r => {
+          let profilePictureUrl: string = await new UserService().findUserProfilePictureUrlById(r.id);
+          let user: SmallUser = {
+            id: r.id,
+            username: r.username,
+            fullName: r.fullName,
+            isVerified: boolean(r.isVerified),
+            profilePictureUrl: profilePictureUrl,
+          };
+
+          users.push(user);
+        }),
+      );
+    }
+
+    return {
+      users,
+      pagination: {
+        page: page,
+        size: count,
+        total: responseResultsNumber.numberOfUsers,
+        hasMore: page * count < responseResultsNumber.numberOfUsers,
+      },
+    };
+  }
+
+  public async updateUserAvatar(userId: number, data: MulterUploadFile): Promise<User> {
+    if (!data.buffer) throw new HttpException(400, 'Missing avatar');
+    const findUser = await Users.query().whereNotDeleted().findById(userId);
+    if (!findUser) throw new HttpException(404, "User doesn't exist");
+
+    // Faccio l'upload dell'immagine del profilo
+    const originalHeight = sizeOf(data.path).height;
+    const originalWidth = sizeOf(data.path).width;
+    if (!originalHeight || !originalWidth) throw new HttpException(400, 'Invalid image');
+
+    // Salvo l'immagine nella cartella uploads/avatars
+    const key = `avatars/${generateRandomKey()}`;
+    if (originalHeight !== AVATAR_SIZE || originalWidth !== AVATAR_SIZE) {
+      const resizedImageWithoutAlpha = await sharp(data.path).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
+
+      const params: PutObjectCommandInput = {
+        Bucket: S3_BUCKET_NAME,
+        Key: key,
+        Body: resizedImageWithoutAlpha,
+        ContentType: data.mimetype,
+      };
+
+      const command = new PutObjectCommand(params);
+      const dataS3: PutObjectCommandOutput = await s3.send(command);
+      if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
+        throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
+    } else {
+      const params: PutObjectCommandInput = {
+        Bucket: S3_BUCKET_NAME,
+        Key: key,
+        Body: data.buffer,
+        ContentType: data.mimetype,
+      };
+
+      const command = new PutObjectCommand(params);
+      const dataS3: PutObjectCommandOutput = await s3.send(command);
+      if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
+        throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
+    }
+
+    // Aggiorno il campo profilePicImageKey
+    const updatedUser = await Users.query().whereNotDeleted().patchAndFetchById(userId, {
+      profilePicImageKey: key,
+
+      updatedAt: new Date(),
+    });
+
+    return updatedUser;
+  }
+
+  public async updateUserUsername(userId: number, username: string): Promise<User> {
+    const findUser = await Users.query().whereNotDeleted().findById(userId);
+    if (!findUser) throw new HttpException(404, "User doesn't exist");
+
+    const usernameLowerCase = username.toLowerCase().trim();
+    if (usernameLowerCase === findUser.username) throw new HttpException(400, 'You cannot use your current username');
+
+    const findUserWithSameUsername = await Users.query().whereNotDeleted().findOne({ username: usernameLowerCase });
+    if (findUserWithSameUsername) throw new HttpException(409, `Username ${usernameLowerCase} already exists`);
+
+    const updatedUser = await Users.query().whereNotDeleted().patchAndFetchById(userId, {
+      username,
+
+      updatedAt: new Date(),
+    });
+
+    return updatedUser;
+  }
+
+  public async updateUserFullName(userId: number, fullName: string): Promise<User> {
+    const findUser = await Users.query().whereNotDeleted().findById(userId);
+    if (!findUser) throw new HttpException(404, "User doesn't exist");
+
+    const updatedUser = await Users.query().whereNotDeleted().patchAndFetchById(userId, {
+      fullName,
+
+      updatedAt: new Date(),
+    });
+
+    return updatedUser;
+  }
+
+  public async updateUserBiography(userId: number, biography: string | null): Promise<User> {
+    const findUser = await Users.query().whereNotDeleted().findById(userId);
+    if (!findUser) throw new HttpException(404, "User doesn't exist");
+
+    const updatedUser = await Users.query()
+      .whereNotDeleted()
+      .patchAndFetchById(userId, {
+        biography: biography ? (biography.length > 0 ? biography : null) : null,
+
+        updatedAt: new Date(),
+      });
+
+    return updatedUser;
+  }
+}
 
 export default UserService;

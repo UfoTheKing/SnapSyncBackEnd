@@ -51,4 +51,8 @@ export const timeDifference = (current: Date, previous: Date): string => {
   } else {
     return Math.round(elapsed / milliSecondsPerYear) + ' years ago';
   }
-}
+};
+
+export const generateRandomKey = () => {
+  return Date.now() + '-' + Math.random().toString(36).substring(2, 15);
+};

@@ -1,5 +1,5 @@
 {
-  "name": "LifeMoments_BackEnd",
+  "name": "snapsyncbackend",
   "version": "0.0.0",
   "description": "TypeScript + Knex + MySQL + Express API Server",
   "author": "",
@@ -60,6 +60,7 @@
     "swagger-ui-express": "^4.5.0",
     "winston": "^3.8.1",
     "winston-daily-rotate-file": "^4.7.1",
+    "ws": "^8.13.0",
     "yup": "^1.2.0",
     "yup-password": "^0.2.2"
   },

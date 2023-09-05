@@ -16,6 +16,8 @@ class UsersRoute implements Routes {
   private initializeRoutes() {
     this.router.get(`${this.path}/:userId`, authMiddleware, blockedMiddleware, this.usersController.getUserProfileById);
     this.router.get(`${this.path}/:userId/info`, authMiddleware, blockedMiddleware, this.usersController.getUserInfoById);
+
+    this.router.post(`${this.path}/contacts`, authMiddleware, this.usersController.createUserContacts);
   }
 }
 

@@ -5,10 +5,22 @@ import UsersRoute from '@routes/users.route';
 import validateEnv from '@utils/validateEnv';
 import FriendshipsRoute from './routes/friendships.route';
 import NotificationsRoute from './routes/notifications.route';
+import AccountsRoute from './routes/accounts.route';
+import SnapsSyncRoute from './routes/snaps_sync.route';
+import SearchesRoute from './routes/searches.route';
 
 validateEnv();
 
-const app = new App([new IndexRoute(), new UsersRoute(), new AuthRoute(), new FriendshipsRoute(), new NotificationsRoute()]);
+const app = new App([
+  new IndexRoute(),
+  new UsersRoute(),
+  new AuthRoute(),
+  new FriendshipsRoute(),
+  new NotificationsRoute(),
+  new AccountsRoute(),
+  new SnapsSyncRoute(),
+  new SearchesRoute(),
+]);
 
 // https://www.instagram.com/api/v1/media/3169382823839935349/comments/?can_support_threading=true&permalink_enabled=false
 /**

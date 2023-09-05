@@ -5,6 +5,10 @@ export interface User {
   profilePicImageKey: string;
 
   phoneNumber: string; // In formato internazionale, esempio: +393401234567
+  phoneNumberOnlyDigits: string; // Solo cifre, esempio: 393401234567
+  phoneNumberCountryIso2: string | null; // Codice ISO 3166-1 alpha-2 del paese, esempio: IT
+  latitude: number | null; // Indica la latitudine del luogo in cui l'utente si è registrato
+  longitude: number | null; // Indica la longitudine del luogo in cui l'utente si è registrato
 
   dateOfBirth: Date; // Data di nascita
 
@@ -26,4 +30,14 @@ export interface User {
   deletedAt: Date | null;
 
   unarchived: boolean;
+}
+
+export interface SmallUser {
+  id: number;
+  username: string;
+  fullName: string;
+  isVerified: boolean;
+  profilePictureUrl: string;
+
+  isContact?: boolean;
 }

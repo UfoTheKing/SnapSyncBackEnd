@@ -1,23 +1,21 @@
-import { NextFunction, Request, Response } from 'express';
+import { NextFunction, Response } from 'express';
 import { User } from '@interfaces/users.interface';
 import userService from '@services/users.service';
 import { RequestWithBlocked, RequestWithUser } from '@/interfaces/auth.interface';
 import { HttpException } from '@/exceptions/HttpException';
 import FriendshipStatusService from '@/services/friendship_status.service';
-import { RECOMBEE_DB, RECOMBEE_PRIVATE_KEY, RECOMBEE_REGION } from '@/config';
 import { boolean } from 'boolean';
-import * as recombee from 'recombee-api-client';
 import FriendService from '@/services/friends.service';
 import { MutualFriends, UserProfile } from '@/interfaces/user_profile.interface';
-var rqs = recombee.requests;
-const client = new recombee.ApiClient(RECOMBEE_DB, RECOMBEE_PRIVATE_KEY, {
-  region: RECOMBEE_REGION,
-});
+import * as yup from 'yup';
+import { CreateUserContactDto } from '@/dtos/users_contacts.dto';
+import UserContactService from '@/services/users_contacts.service';
 
 class UsersController {
   public userService = new userService();
   public friendshipStatusService = new FriendshipStatusService();
   public friendService = new FriendService();
+  public userContactService = new UserContactService();
 
   public getUserProfileById = async (req: RequestWithUser & RequestWithBlocked, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -27,10 +25,10 @@ class UsersController {
       const findOneUserData: User = await this.userService.findUserById(userId);
       if (!findOneUserData) throw new HttpException(404, "User doesn't exist");
 
+      const isMyProfile = req.user.id === userId;
+
       let friendsCount = await this.friendService.findFriendsCountByUserId(userId, req.user.id);
       let friendship_status = await this.friendshipStatusService.getFriendshipStatus(req.user.id, userId);
-      let lifetimeStoriesCount = 0;
-      let lifetimeLocationsCount = 0;
 
       let userProfileImageUrl = await this.userService.findUserProfilePictureUrlById(userId);
 
@@ -43,7 +41,7 @@ class UsersController {
       // const calendar = await this.storyService.findStoryCalendarNodesByUserId(userId, currentMonth, currentYear);
 
       let mutualFriends: MutualFriends | undefined = undefined;
-      if (!friendship_status.isFriend) {
+      if (!friendship_status.isFriend && !isMyProfile) {
         let commonFriends = await this.friendService.findCommonFriends(req.user.id, userId);
 
         mutualFriends = {
@@ -62,6 +60,7 @@ class UsersController {
       let userProfile: UserProfile = {
         id: findOneUserData.id,
         username: findOneUserData.username,
+        fullName: findOneUserData.fullName,
         isVerified: boolean(findOneUserData.isVerified),
         profilePictureUrl: userProfileImageUrl,
 
@@ -70,19 +69,8 @@ class UsersController {
         mutualFriends: mutualFriends,
 
         friendsCount: friendsCount,
-        lifetimeStoriesCount: lifetimeStoriesCount,
-        lifetimeLocationsCount: lifetimeLocationsCount,
 
-        friendshipStatus: friendship_status,
-
-        // calendar: {
-        //   nodes: calendar,
-        //   info: {
-        //     month: currentMonth,
-        //     monthName: currentDate.toLocaleString('en', { month: 'long' }),
-        //     year: currentYear,
-        //   }
-        // },
+        isMyProfile: isMyProfile,
       };
 
       res.status(200).json({ ...userProfile, message: 'ok' });
@@ -99,20 +87,15 @@ class UsersController {
       const findOneUserData: User = await this.userService.findUserById(userId);
 
       let userProfileImageUrl = await this.userService.findUserProfilePictureUrlById(userId);
-
-      let lifetimeStoriesCount = 0;
-      let lifetimeLocationsCount = 0;
       let friendsCount = await this.friendService.findFriendsCountByUserId(userId, req.user.id);
 
       let response = {
         user: {
           id: findOneUserData.id,
           username: findOneUserData.username,
+          fullName: findOneUserData.fullName,
           isVerified: boolean(findOneUserData.isVerified),
           profilePictureUrl: userProfileImageUrl,
-
-          lifetimeStoriesCount: lifetimeStoriesCount,
-          lifetimeLocationsCount: lifetimeLocationsCount,
           friendsCount: friendsCount,
         },
       };
@@ -137,24 +120,54 @@ class UsersController {
     }
   };
 
-  public syncUsers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const users = await this.userService.findAllUser();
+  public createUserContacts = async (req: RequestWithUser, res: Response, next: NextFunction): Promise<void> => {
+    const validationSchema = yup.object().shape({
+      phoneNumbers: yup.array().of(yup.string().required()).required(),
+    });
 
-      let errors: recombee.errors.ResponseError[] = [];
+    try {
+      await validationSchema.validate(req.body, { abortEarly: false });
 
       await Promise.all(
-        users.map(async user => {
-          await client.send(new rqs.AddUser(user.id.toString()), (error, response) => {
-            if (error) errors.push(error);
-            else {
-              console.log(response);
+        req.body.phoneNumbers.map(async (phoneNumber: string) => {
+          phoneNumber = phoneNumber.trim();
+          var findUser: User | undefined = undefined;
+          try {
+            findUser = await this.userService.findUserByPhoneNumber(phoneNumber);
+          } catch (error) {
+            // Non ho trovato nessun utente con questo phoneNumber
+          }
+
+          if (findUser && findUser.id !== req.user.id) {
+            let alreadyExists = true;
+            try {
+              // Controllo se esiste già un contatto con questo userId e contactId
+              await this.userContactService.findUserContactByUserIdAndContactId(req.user.id, findUser.id);
+              alreadyExists = true;
+            } catch (error) {
+              if (error instanceof HttpException && error.status === 404) alreadyExists = false;
+
+              // Non faccio nulla
             }
-          });
+
+            if (!alreadyExists) {
+              // Lo creo
+              const data: CreateUserContactDto = {
+                userId: req.user.id,
+                contactId: findUser.id,
+              };
+
+              try {
+                await this.userContactService.createUserContact(data);
+              } catch (error) {
+                // Non faccio nulla
+              }
+            }
+          }
         }),
       );
 
-      res.status(200).json({ message: 'ok', errors: errors });
+      res.status(200).json({ message: 'ok' });
     } catch (error) {
       next(error);
     }
