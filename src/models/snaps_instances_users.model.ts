@@ -11,16 +11,17 @@ const softDelete = objectionSoftDelete({
 
 export class SnapsInstancesUsers extends softDelete(Model) implements SnapInstanceUser {
   id!: number;
+  userId!: number;
   snapInstanceId!: number;
   snapShapePositionId!: number;
-  userId!: number;
+  locationId!: number | null;
 
   isOwner!: boolean;
-
-  imageKey!: string | null;
-
   isJoined!: boolean;
   joinedAt!: Date | null;
+
+  cdlPublicId!: string | null;
+  snappedAtUtc!: Date | null;
 
   createdAt!: Date;
   updatedAt!: Date;

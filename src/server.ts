@@ -8,6 +8,9 @@ import NotificationsRoute from './routes/notifications.route';
 import AccountsRoute from './routes/accounts.route';
 import SnapsSyncRoute from './routes/snaps_sync.route';
 import SearchesRoute from './routes/searches.route';
+import FeedRoute from './routes/feed.route';
+import LocationsRoute from './routes/locations.route';
+import CommentsRoute from './routes/comments.route';
 
 validateEnv();
 
@@ -20,6 +23,9 @@ const app = new App([
   new AccountsRoute(),
   new SnapsSyncRoute(),
   new SearchesRoute(),
+  new FeedRoute(),
+  new LocationsRoute(),
+  new CommentsRoute(),
 ]);
 
 // https://www.instagram.com/api/v1/media/3169382823839935349/comments/?can_support_threading=true&permalink_enabled=false

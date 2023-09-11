@@ -1,4 +1,5 @@
 import { EXPO_ACCESS_TOKEN } from '@/config';
+import { User } from '@/interfaces/users.interface';
 import { ExpoPushTokens } from '@/models/expo_push_tokens.model';
 import { Expo, ExpoPushMessage } from 'expo-server-sdk';
 
@@ -7,9 +8,9 @@ import { Expo, ExpoPushMessage } from 'expo-server-sdk';
 let expo = new Expo({ accessToken: EXPO_ACCESS_TOKEN });
 
 class ExpoService {
-  public async sendSnapSyncNotification(memberId: number, key: string, username: string): Promise<void> {
-    // Recupero gli expoPushTokens dell'utente
-    let dbExpoPushTokens = await ExpoPushTokens.query().where('userId', memberId);
+  public async sendSnapSyncNotification(key: string, usersIds: number[], owner: User): Promise<void> {
+    // Recupero gli expoPushTokens degli utenti
+    let dbExpoPushTokens = await ExpoPushTokens.query().whereIn('userId', usersIds);
     let expoPushTokens: string[] = dbExpoPushTokens.map(item => item.token);
 
     // Create the messages that you want to send to clients
@@ -28,8 +29,8 @@ class ExpoService {
       messages.push({
         to: pushToken,
         sound: 'default',
-        title: `${username} wants to sync snaps with you!`,
-        data: { key: key },
+        title: `${owner.username} wants to sync snaps with you!`,
+        data: { key: key, type: 'JOIN_SNAP' },
       });
     }
 
@@ -42,13 +43,14 @@ class ExpoService {
       for (let chunk of chunks) {
         try {
           let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-          console.log(ticketChunk);
+          console.log(ticketChunk[0]);
           tickets.push(...ticketChunk);
           // NOTE: If a ticket contains an error code in ticket.details.error, you
           // must handle it appropriately. The error codes are listed in the Expo
           // documentation:
           // https://docs.expo.io/push-notifications/sending-notifications/#individual-errors
         } catch (error) {
+          // DeviceNotRegistered -> rimuovo l'expo_push_tokens
           console.error(error);
         }
       }

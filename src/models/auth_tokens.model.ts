@@ -46,7 +46,7 @@ export class AuthTokens extends Model implements AuthToken {
         to: `${Devices.tableName}.id`,
       },
       filter: f => f.whereNotDeleted(),
-    }
+    },
   };
 }
 

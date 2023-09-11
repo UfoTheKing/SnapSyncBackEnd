@@ -4,19 +4,21 @@ import * as yup from 'yup';
 import UserService from '@/services/users.service';
 import { HttpException } from '@/exceptions/HttpException';
 import { LogInPhoneNumberDto, LogInWithAuthTokenDto, SignUpDto } from '@/dtos/auth.dto';
-import { RequestWithDevice, RequestWithFile, RequestWithUser } from '@/interfaces/auth.interface';
+import { RequestWithCountry, RequestWithDevice, RequestWithFile, RequestWithUser } from '@/interfaces/auth.interface';
 import { v4 as uuidv4 } from 'uuid';
 import AuthUserService from '@/services/auth_users.service';
 import { CreateAuthUserDto, UpdateAuthUserDto } from '@/dtos/auth_users.dto';
 import moment from 'moment';
 import { WebServiceClient } from '@maxmind/geoip2-node';
-import { MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY } from '@/config';
+import { MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } from '@/config';
 import * as ip from 'ip';
+import TwilioService from '@/services/twilio.service';
 
 class AuthController {
   public authService = new AuthService();
   public userService = new UserService();
   public authUsersService = new AuthUserService();
+  public twilioService = new TwilioService();
 
   public getSessionId = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -27,6 +29,14 @@ class AuthController {
       await this.authUsersService.createAuthUser(data);
 
       res.status(200).json({ sessionId: sessionId, message: 'ok' });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getCountryFromIp = async (req: RequestWithCountry, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      res.status(200).json({ country: req.country, message: 'ok' });
     } catch (error) {
       next(error);
     }
@@ -126,7 +136,8 @@ class AuthController {
 
       await this.authUsersService.updateAuthUser(findSession.id, data, true);
 
-      // TODO: Invio OTP
+      // Invio OTP
+      // await this.twilioService.sendOtp(phoneNumber);
 
       res.status(200).json({ message: 'ok' });
     } catch (error) {
@@ -179,6 +190,10 @@ class AuthController {
 
       if (userExists) {
         response['goNext'] = false;
+
+        // Elimino l'AuthUser
+        await this.authUsersService.deleteAuthUser(findSession.id);
+
         const data: LogInPhoneNumberDto = { phoneNumber: findSession.phoneNumber };
 
         const loginResponse = await this.authService.loginWithPhoneNumber(data, req.device);
@@ -229,14 +244,16 @@ class AuthController {
       const findSession = await this.authUsersService.findAuthUserBySessionId(req.body.sessionId);
       if (!findSession) throw new HttpException(404, 'Session not found');
 
-      await this.authService.validateUsername(req.body.username);
+      let username = req.body.username.toLowerCase().trim();
+
+      await this.authService.validateUsername(username);
 
       const data: UpdateAuthUserDto = {
         fullName: findSession.fullName,
         dateOfBirth: moment(findSession.dateOfBirth).format('YYYY-MM-DD'),
         phoneNumber: findSession.phoneNumber,
         isPhoneNumberVerified: true,
-        username: req.body.username,
+        username: username,
       };
 
       await this.authUsersService.updateAuthUser(findSession.id, data);
@@ -258,6 +275,7 @@ class AuthController {
       await validationSchema.validate(data, { abortEarly: false });
 
       if (!req.file) throw new HttpException(400, 'Missing avatar');
+      if (!req.file.buffer) throw new HttpException(400, 'Missing avatar');
 
       data.file = req.file;
 

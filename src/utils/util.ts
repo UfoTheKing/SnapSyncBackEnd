@@ -1,3 +1,4 @@
+import moment from 'moment';
 /**
  * @method isEmpty
  * @param {String | Number | Object} value
@@ -20,12 +21,12 @@ export const isEmpty = (value: string | number | object): boolean => {
 
 // Calcolo la differenza tra due date e ritorno:
 // se la differenza è minore di 1 minuto ritorno now
-// 1 mn ago
-// 1 hr ago
-// 1 day ago
-// 1 week ago
-// 1 month ago
-// 1 year ago
+// 1 mn
+// 1 hr
+// 1 day
+// 1 week
+// 1 month
+// 1 year
 
 export const timeDifference = (current: Date, previous: Date): string => {
   const milliSecondsPerMinute = 60 * 1000;
@@ -55,4 +56,10 @@ export const timeDifference = (current: Date, previous: Date): string => {
 
 export const generateRandomKey = () => {
   return Date.now() + '-' + Math.random().toString(36).substring(2, 15);
+};
+
+export const nowUtc = (): Date => {
+  let now = moment.utc().toDate();
+
+  return now;
 };

@@ -8,6 +8,7 @@ import Objection from 'objection';
 import FriendshipStatusService from './friendship_status.service';
 import { Friends } from '@/models/friends.model';
 import { SnapsInstances } from '@/models/snaps_instances.model';
+import FriendService from './friends.service';
 
 class BlockedUserService {
   public async createBlockedUser(data: CreateBlockedUserDto): Promise<BlockedUser> {
@@ -43,18 +44,16 @@ class BlockedUserService {
       // Se sono amici allora li rimuovo dalla lista degli amici
       if (friendshipStatus.isFriend || friendshipStatus.incomingRequest || friendshipStatus.outgoingRequest) {
         // Elimino tutti i record nella tabella dove friendshipHash = LOWEST(USERID, FRIENDID)_HIGHEST(USERID, FRIENDID)
-        let lowestUserId = findUser.id < findBlockedUser.id ? findUser.id : findBlockedUser.id;
-        let highestUserId = findUser.id > findBlockedUser.id ? findUser.id : findBlockedUser.id;
-        let friendshipHash = `${lowestUserId}_${highestUserId}`;
+        let friendshipHash = new FriendService().generateFriendshipHash(findUser.id, findBlockedUser.id);
 
         await Friends.query(trx).whereNotDeleted().where('friendshipHash', friendshipHash).delete();
       }
 
       // Elimino le snaps_instances dove userId = findUser.id e memberId = findBlockedUser.id
-      await SnapsInstances.query(trx).whereNotDeleted().where('userId', findUser.id).where('memberId', findBlockedUser.id).delete();
+      // await SnapsInstances.query(trx).whereNotDeleted().where('userId', findUser.id).where('memberId', findBlockedUser.id).delete();
 
       // Elimino le snaps_instances dove userId = findBlockedUser.id e memberId = findUser.id
-      await SnapsInstances.query(trx).whereNotDeleted().where('userId', findBlockedUser.id).where('memberId', findUser.id).delete();
+      // await SnapsInstances.query(trx).whereNotDeleted().where('userId', findBlockedUser.id).where('memberId', findUser.id).delete();
 
       await trx.commit();
 

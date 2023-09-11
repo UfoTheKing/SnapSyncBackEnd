@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Routes } from '@interfaces/routes.interface';
+import { Routes } from '@/interfaces/project/routes.interface';
 import NotificationsController from '@/controllers/notifications.controller';
 import authMiddleware from '@/middlewares/auth.middleware';
 import deviceMiddleware from '@/middlewares/device.middleware';

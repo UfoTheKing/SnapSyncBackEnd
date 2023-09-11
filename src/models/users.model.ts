@@ -36,6 +36,7 @@ export class Users extends softDelete(Model) implements User {
   isShadowBanned!: boolean;
   shadowBannedAt!: Date | null;
   shadowBannedUntil!: Date | null;
+  isPrivate!: boolean;
 
   createdAt!: Date;
   updatedAt!: Date;
@@ -52,6 +53,8 @@ export class Users extends softDelete(Model) implements User {
     delete json.profilePicImageKey;
 
     delete json.phoneNumber;
+    delete json.phoneNumberOnlyDigits;
+    delete json.phoneNumberCountryIso2;
 
     json.dateOfBirth = {
       it: moment(json.dateOfBirth).format('DD/MM/YYYY'),
@@ -61,6 +64,9 @@ export class Users extends softDelete(Model) implements User {
     json.isVerified = boolean(json.isVerified);
     delete json.verifiedAt;
 
+    delete json.latitude;
+    delete json.longitude;
+
     delete json.isBanned;
     delete json.bannedAt;
     delete json.bannedUntil;
@@ -68,6 +74,8 @@ export class Users extends softDelete(Model) implements User {
     delete json.isShadowBanned;
     delete json.shadowBannedAt;
     delete json.shadowBannedUntil;
+
+    json.isPrivate = boolean(json.isPrivate);
 
     delete json.createdAt;
     delete json.updatedAt;

@@ -1,17 +1,14 @@
 import { CreateBlockedUserDto, DestroyBlockedUserDto } from '@/dtos/blocked_users.dto';
 import { AcceptPendingFriendDto, CreatePendingFriendDto, DenyPendingFriendDto } from '@/dtos/friends.dto';
 import { HttpException } from '@/exceptions/HttpException';
-import { RequestWithBlocked, RequestWithUser } from '@/interfaces/auth.interface';
-import { FriendshipStatus } from '@/interfaces/friendship_status.interface';
+import { RequestWithBlocked, RequestWithIsPrivate, RequestWithUser } from '@/interfaces/auth.interface';
+import { FriendshipStatus } from '@/interfaces/project/friendship_status.interface';
 import BlockedUserService from '@/services/blocked_users.service';
 import FriendService from '@/services/friends.service';
 import FriendshipStatusService from '@/services/friendship_status.service';
 import UserService from '@/services/users.service';
 import { NextFunction, Response } from 'express';
 import * as yup from 'yup';
-import { WebServiceClient } from '@maxmind/geoip2-node';
-import { MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY } from '@/config';
-import * as ip from 'ip';
 
 class FriendshipsController {
   public userService = new UserService();
@@ -19,9 +16,14 @@ class FriendshipsController {
   public blockedUserService = new BlockedUserService();
   public friendService = new FriendService();
 
-  public getUserFriends = async (req: RequestWithUser & RequestWithBlocked, res: Response, next: NextFunction): Promise<void> => {
+  public getUserFriends = async (
+    req: RequestWithUser & RequestWithBlocked & RequestWithIsPrivate,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
     try {
       if (req.isBlockedByViewer) throw new HttpException(404, 'User not found');
+      if (req.isPrivate && !req.isMyFriend) throw new HttpException(403, 'This user has a private profile');
 
       const userId = Number(req.params.userId);
       const findUser = await this.userService.findUserById(userId);
@@ -67,40 +69,6 @@ class FriendshipsController {
 
       res.status(200).json({
         ...outgoingRequests,
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  public suggestFriends = async (req: RequestWithUser, res: Response, next: NextFunction): Promise<void> => {
-    const validationSchema = yup.object().shape({
-      phoneNumbers: yup.string().nullable(),
-    });
-    try {
-      await validationSchema.validate(req.body, { abortEarly: false });
-
-      let lt: number | null = null;
-      let lg: number | null = null;
-
-      if (ip.isPrivate(req.ip)) {
-        // IP PRIVATO -> Prendo le coordinate del paese di Casalmaggiore
-        lt = 44.983333;
-        lg = 10.433333;
-      } else {
-        const client = new WebServiceClient(MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY);
-        // Recupero la longitudine e la latitudine
-        const city = await client.city(req.ip);
-
-        lt = city && city.location ? city.location.latitude : null;
-        lg = city && city.location ? city.location.longitude : null;
-      }
-
-      const suggestedFriends = await this.friendService.findSuggestedFriendsByUserId(req.user.id, req.body.phoneNumbers, lt, lg);
-
-      res.status(200).json({
-        users: suggestedFriends,
-        message: 'ok',
       });
     } catch (error) {
       next(error);

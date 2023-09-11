@@ -18,9 +18,10 @@ export class SnapsInstances extends softDelete(Model) implements SnapInstance {
   timerStarted!: boolean;
   timerDurationMinutes!: number;
   timerDurationSeconds!: number;
-  timerStartAt: Date | null;
+  timerStartAt!: Date | null;
 
-  imageKey!: string | null;
+  cdlPublicId!: string | null;
+  cdlPublicUrl!: string | null;
   collageCreatedAt!: Date | null;
 
   createdAt!: Date;

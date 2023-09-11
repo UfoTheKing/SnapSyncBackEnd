@@ -10,12 +10,13 @@ import { MissingParamsException } from '@/exceptions/MissingParamsException';
 import { TakeSnapDto } from '@/dtos/snaps_instances.dto';
 import WebSocket from 'ws';
 import { WEBSOCKET_HOST } from '@/config';
-import { WssMessage, WssSystemMessage } from '@/interfaces/wss.interface';
+import { WssMessage, WssSystemMessage } from '@/interfaces/project/wss.interface';
 import WebsocketTokenService from '@/services/websocket_tokens.service';
 import { ApiCodes } from '@/utils/apiCodes';
 import SnapShapePositionService from '@/services/snaps_shapes_positions.service';
 import { CreateSnapSyncDto } from '@/dtos/snaps_sync.dto';
 import SnapSyncService from '@/services/snaps_sync.service';
+import { WssActions } from '@/utils/enums';
 
 class SnapsSyncController {
   private wsConnection: WebSocket | null = null;
@@ -47,7 +48,7 @@ class SnapsSyncController {
       let { model, hashedToken } = await this.websocketTokenService.createWebsocketToken();
       let wssMessage: WssMessage = {
         token: hashedToken,
-        action: 'LOGIN_SYSTEM',
+        action: WssActions.LOGIN_SYSTEM,
         deviceUuid: null,
         data: null,
       };
@@ -57,7 +58,7 @@ class SnapsSyncController {
     this.wsConnection.on('message', data => {
       let message = JSON.parse(data.toString()) as WssSystemMessage;
       if (message) {
-        if (message.action === 'LOGIN_SYSTEM') {
+        if (message.action === WssActions.LOGIN_SYSTEM) {
           if (message.success) {
             this.isSystemLoggedIn = true;
           } else {
@@ -92,7 +93,7 @@ class SnapsSyncController {
       for (let i = 0; i < data.length; i++) {
         const iconUrl = await this.snapShapeService.findIconUrlById(data[i].id);
         const focusedIconUrl = await this.snapShapeService.findFocusedIconUrlById(data[i].id);
-        const positions = await this.snapShapePositionService.findAllSnapsShapesPositionsBySnapInstanceShapeId(data[i].id);
+        const positions = await this.snapShapePositionService.findAllSnapsShapesPositionsBySnapShapeId(data[i].id);
 
         shapes.push({
           id: data[i].id,
@@ -105,6 +106,22 @@ class SnapsSyncController {
       }
 
       res.status(200).json({ shapes });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public checkSnapInstance = async (req: RequestWithUser, res: Response, next: NextFunction) => {
+    try {
+      if (!req.params.key) throw new MissingParamsException('key');
+
+      const key = req.params.key;
+      const snapInstance = await this.snapInstanceService.findSnapInstanceByKey(key);
+      if (!snapInstance) throw new HttpException(404, "SnapSync doesn't exist");
+
+      await this.snapInstanceService.checkSnapInstance(snapInstance.id, req.user.id);
+
+      res.status(200).json({ message: 'ok', isJoinable: true });
     } catch (error) {
       next(error);
     }
@@ -142,7 +159,7 @@ class SnapsSyncController {
       if (allUsersHaveTakenSnap) {
         // Mando un messaggio WebSocket a tutti i client
         let wssMessage: WssMessage = {
-          action: 'SEND_SNAP',
+          action: WssActions.SEND_SNAP,
           data: {
             key: snapInstance.instanceKey,
             image: image,
@@ -169,6 +186,15 @@ class SnapsSyncController {
         await this.sendErrorSnapWssMessage(globalKey);
       }
 
+      next(error);
+    }
+  };
+
+  public cloudinaryWebhook = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // TODO: controllare che il webhook sia stato inviato da Cloudinary con il signatureVerification
+      // Se corretto salvare il file su s3 e mandare un messaggio WebSocket a tutti i client dello SnapSync
+    } catch (error) {
       next(error);
     }
   };
@@ -201,7 +227,7 @@ class SnapsSyncController {
 
       // Mando un messaggio WebSocket a tutti i client
       let wssMessage: WssMessage = {
-        action: 'PUBLISH_SNAP',
+        action: WssActions.PUBLISH_SNAP,
         data: {
           key: snapInstance.instanceKey,
         },
@@ -218,7 +244,7 @@ class SnapsSyncController {
   private sendErrorSnapWssMessage = async (key: string | null): Promise<void> => {
     if (this.wsConnection && this.wsConnection.readyState === WebSocket.OPEN && this.isSystemLoggedIn && key) {
       let wssMessage: WssMessage = {
-        action: 'ERROR_SNAP',
+        action: WssActions.ERROR_SNAP,
         data: {
           key: key,
         },

@@ -47,6 +47,11 @@ export interface RequestWithUser extends RequestWithClientIp {
   user: User;
 }
 
+export interface RequestWithIsPrivate extends RequestWithClientIp {
+  isPrivate: boolean;
+  isMyFriend: boolean;
+}
+
 export interface RequestWithCountry extends RequestWithClientIp {
   country: Country | null;
   location?: LocationRecord;

@@ -374,98 +374,6 @@ class FriendService {
     };
   };
 
-  public findSuggestedFriendsByUserId = async (
-    userId: number,
-    phoneNumbers: string | null = null,
-    lt: number | null = null,
-    lg: number | null = null,
-  ): Promise<
-    Array<{
-      id: number;
-      username: string;
-      fullName: string;
-      isVerified: boolean;
-      profilePictureUrl: string;
-      mutualFriends?: MutualFriends;
-    }>
-  > => {
-    const user = await Users.query().whereNotDeleted().findById(userId);
-    if (!user) throw new HttpException(404, 'User not found');
-
-    let users: Array<{
-      id: number;
-      username: string;
-      fullName: string;
-      isVerified: boolean;
-      profilePictureUrl: string;
-      mutualFriends?: MutualFriends;
-    }> = [];
-
-    let index = {
-      phoneNumbers: {
-        from: 0,
-        to: 0,
-      },
-      suggest: {
-        from: 0,
-        to: 0,
-      },
-    };
-
-    // Recupero gli utenti suggeriti, in base ai numeri di telefono passati
-    if (phoneNumbers) {
-      const StoredProcedureName = `${DB_DATABASE}.GetNonFriendUsersForUserFromPhoneNumbers`;
-
-      const results = await knex.raw(`CALL ${StoredProcedureName}(${userId}, '${phoneNumbers}')`);
-
-      let responseResults: Array<User> = [];
-
-      if (results.length > 0 && results[0].length > 0) {
-        responseResults = results[0][0];
-      }
-
-      if (responseResults.length > 0) {
-        await Promise.all(
-          responseResults.map(async r => {
-            let profilePictureUrl: string = await new UserService().findUserProfilePictureUrlById(r.id);
-
-            let cFriends = undefined;
-
-            try {
-              cFriends = await this.findCommonFriends(userId, r.id);
-            } catch (error) {
-              // Non faccio nulla
-            }
-
-            let mutualFriends: MutualFriends = {
-              count: cFriends ? cFriends.pagination.total : 0,
-              nodes: cFriends ? cFriends.users : [],
-            };
-
-            users.push({
-              id: r.id,
-              username: r.username,
-              fullName: r.fullName,
-              isVerified: boolean(r.isVerified),
-              profilePictureUrl: profilePictureUrl,
-              mutualFriends: mutualFriends,
-            });
-          }),
-        );
-      }
-
-      index.phoneNumbers.from = 0;
-      index.phoneNumbers.to = users.length;
-      index.suggest.from = users.length + 1;
-    }
-
-    // Recupero gli utenti suggeriti, in base alle vicinanze geografiche
-    if (lt && lg) {
-    }
-
-    return users;
-  };
-
   public findCommonFriends = async (
     loggedUserId: number,
     visitedUserId: number,
@@ -551,9 +459,7 @@ class FriendService {
     const findFriend = await Users.query().whereNotDeleted().findById(data.friendId);
     if (!findFriend) throw new HttpException(404, 'User not found');
 
-    let lowestUserId = findUser.id < findFriend.id ? findUser.id : findFriend.id;
-    let highestUserId = findUser.id > findFriend.id ? findUser.id : findFriend.id;
-    let friendshipHash = lowestUserId + '_' + highestUserId;
+    let friendshipHash = await this.generateFriendshipHash(findUser.id, findFriend.id);
 
     const findFriendship = await Friends.query()
       .whereNotDeleted()
@@ -608,9 +514,7 @@ class FriendService {
     const findFriend = await Users.query().whereNotDeleted().findById(data.friendId); // L'utente loggato: colui che ha ricevuto la richiesta di amicizia
     if (!findFriend) throw new HttpException(404, 'User not found');
 
-    let lowestUserId = findUser.id < findFriend.id ? findUser.id : findFriend.id;
-    let highestUserId = findUser.id > findFriend.id ? findUser.id : findFriend.id;
-    let friendshipHash = lowestUserId + '_' + highestUserId;
+    let friendshipHash = await this.generateFriendshipHash(findUser.id, findFriend.id);
 
     const findFriendship = await Friends.query()
       .whereNotDeleted()
@@ -670,9 +574,7 @@ class FriendService {
     const findFriend = await Users.query().whereNotDeleted().findById(data.friendId); // L'utente loggato: colui che ha ricevuto la richiesta di amicizia
     if (!findFriend) throw new HttpException(404, 'User not found');
 
-    let lowestUserId = findUser.id < findFriend.id ? findUser.id : findFriend.id;
-    let highestUserId = findUser.id > findFriend.id ? findUser.id : findFriend.id;
-    let friendshipHash = lowestUserId + '_' + highestUserId;
+    let friendshipHash = await this.generateFriendshipHash(findUser.id, findFriend.id);
 
     const findFriendship = await Friends.query()
       .whereNotDeleted()
@@ -738,9 +640,7 @@ class FriendService {
     const findFriend = await Users.query().whereNotDeleted().findById(friendId);
     if (!findFriend) throw new HttpException(404, 'User not found');
 
-    let lowestUserId = findUser.id < findFriend.id ? findUser.id : findFriend.id;
-    let highestUserId = findUser.id > findFriend.id ? findUser.id : findFriend.id;
-    let friendshipHash = lowestUserId + '_' + highestUserId;
+    let friendshipHash = await this.generateFriendshipHash(findUser.id, findFriend.id);
 
     const findFriendship = await Friends.query()
       .whereNotDeleted()
@@ -751,6 +651,14 @@ class FriendService {
     if (!findFriendship) throw new HttpException(404, 'Ops! There is no friendship');
 
     await Friends.query().deleteById(findFriendship.id);
+  };
+
+  public generateFriendshipHash = (userId: number, friendId: number): string => {
+    let lowestUserId = userId < friendId ? userId : friendId;
+    let highestUserId = userId > friendId ? userId : friendId;
+    let friendshipHash = lowestUserId + '_' + highestUserId;
+
+    return friendshipHash;
   };
 }
 

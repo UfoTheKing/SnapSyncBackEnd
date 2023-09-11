@@ -10,12 +10,14 @@ import { MutualFriends, UserProfile } from '@/interfaces/user_profile.interface'
 import * as yup from 'yup';
 import { CreateUserContactDto } from '@/dtos/users_contacts.dto';
 import UserContactService from '@/services/users_contacts.service';
+import SnapSyncService from '@/services/snaps_sync.service';
 
 class UsersController {
   public userService = new userService();
   public friendshipStatusService = new FriendshipStatusService();
   public friendService = new FriendService();
   public userContactService = new UserContactService();
+  public snapSyncService = new SnapSyncService();
 
   public getUserProfileById = async (req: RequestWithUser & RequestWithBlocked, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -29,6 +31,8 @@ class UsersController {
 
       let friendsCount = await this.friendService.findFriendsCountByUserId(userId, req.user.id);
       let friendship_status = await this.friendshipStatusService.getFriendshipStatus(req.user.id, userId);
+
+      let snapsCount = await this.snapSyncService.findSnapsCountByUserId(userId, req.user.id);
 
       let userProfileImageUrl = await this.userService.findUserProfilePictureUrlById(userId);
 
@@ -50,8 +54,9 @@ class UsersController {
             return {
               id: friend.id,
               username: friend.username,
+              fullName: friend.fullName,
               isVerified: boolean(friend.isVerified),
-              profilePictureUrl: null,
+              profilePictureUrl: friend.profilePictureUrl,
             };
           }),
         };
@@ -69,8 +74,10 @@ class UsersController {
         mutualFriends: mutualFriends,
 
         friendsCount: friendsCount,
+        snapsCount: snapsCount,
 
         isMyProfile: isMyProfile,
+        isPrivate: boolean(findOneUserData.isPrivate),
       };
 
       res.status(200).json({ ...userProfile, message: 'ok' });
@@ -88,6 +95,7 @@ class UsersController {
 
       let userProfileImageUrl = await this.userService.findUserProfilePictureUrlById(userId);
       let friendsCount = await this.friendService.findFriendsCountByUserId(userId, req.user.id);
+      let snapsCount = await this.snapSyncService.findSnapsCountByUserId(userId, req.user.id);
 
       let response = {
         user: {
@@ -97,6 +105,7 @@ class UsersController {
           isVerified: boolean(findOneUserData.isVerified),
           profilePictureUrl: userProfileImageUrl,
           friendsCount: friendsCount,
+          snapsCount: snapsCount,
         },
       };
 
@@ -128,6 +137,8 @@ class UsersController {
     try {
       await validationSchema.validate(req.body, { abortEarly: false });
 
+      const createdUserContactsIds: number[] = [];
+
       await Promise.all(
         req.body.phoneNumbers.map(async (phoneNumber: string) => {
           phoneNumber = phoneNumber.trim();
@@ -142,7 +153,8 @@ class UsersController {
             let alreadyExists = true;
             try {
               // Controllo se esiste già un contatto con questo userId e contactId
-              await this.userContactService.findUserContactByUserIdAndContactId(req.user.id, findUser.id);
+              let c = await this.userContactService.findUserContactByUserIdAndContactId(req.user.id, findUser.id);
+              createdUserContactsIds.push(c.id);
               alreadyExists = true;
             } catch (error) {
               if (error instanceof HttpException && error.status === 404) alreadyExists = false;
@@ -158,7 +170,8 @@ class UsersController {
               };
 
               try {
-                await this.userContactService.createUserContact(data);
+                let c = await this.userContactService.createUserContact(data);
+                createdUserContactsIds.push(c.id);
               } catch (error) {
                 // Non faccio nulla
               }
@@ -166,6 +179,9 @@ class UsersController {
           }
         }),
       );
+
+      // Elimino tutti i contatti che non sono più presenti
+      await this.userContactService.deleteUserContactsByUserIdAndNotInContactIds(req.user.id, createdUserContactsIds);
 
       res.status(200).json({ message: 'ok' });
     } catch (error) {

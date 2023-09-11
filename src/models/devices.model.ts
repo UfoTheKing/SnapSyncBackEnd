@@ -10,14 +10,14 @@ const softDelete = objectionSoftDelete({
 
 export class Devices extends softDelete(Model) implements Device {
   id!: number;
-    uuid!: string;
-    brand!: string | null;
-    osName!: string | null;
-    osVersion!: string | null;
-    modelName!: string | null;
-    platformOs!: string | null;
-    latitude!: string | null;
-    longitude!: string | null;
+  uuid!: string;
+  brand!: string | null;
+  osName!: string | null;
+  osVersion!: string | null;
+  modelName!: string | null;
+  platformOs!: string | null;
+  latitude!: string | null;
+  longitude!: string | null;
 
   createdAt!: Date;
   updatedAt!: Date;

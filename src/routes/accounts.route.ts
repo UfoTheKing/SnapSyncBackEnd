@@ -1,6 +1,6 @@
 import AccountsController from '@/controllers/accounts.controller';
 import { HttpException } from '@/exceptions/HttpException';
-import { Routes } from '@/interfaces/routes.interface';
+import { Routes } from '@/interfaces/project/routes.interface';
 import authMiddleware from '@/middlewares/auth.middleware';
 import { Router } from 'express';
 import multer from 'multer';
@@ -40,6 +40,8 @@ class AccountsRoute implements Routes {
     this.router.get(`${this.path}/edit/web_form_data`, authMiddleware, this.accountsController.getWebFormData);
 
     this.router.post(`${this.path}/web_change_profile_pic`, authMiddleware, upload.single('avatar'), this.accountsController.webChangeProfilePicture); // multipart/form-data; boundary=----WebKitFormBoundaryPd3Dn3B16c0lSBzt
+
+    this.router.put(`${this.path}/set_private`, authMiddleware, this.accountsController.setIsPrivate);
 
     this.router.put(`${this.path}/edit/username`, authMiddleware, this.accountsController.setUsername);
     this.router.put(`${this.path}/edit/full_name`, authMiddleware, this.accountsController.setFullName);

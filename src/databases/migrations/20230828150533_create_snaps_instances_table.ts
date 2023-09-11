@@ -14,7 +14,8 @@ export async function up(knex: Knex): Promise<void> {
     table.integer('timerDurationSeconds').defaultTo(10);
     table.timestamp('timerStartAt').nullable();
 
-    table.string('imageKey').nullable().comment('S3 key of the image');
+    table.string('cdlPublicId').nullable();
+    table.string('cdlPublicUrl').nullable();
     table.timestamp('collageCreatedAt').nullable();
 
     table.timestamp('createdAt').defaultTo(knex.fn.now());

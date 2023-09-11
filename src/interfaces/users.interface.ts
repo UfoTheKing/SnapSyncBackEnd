@@ -24,6 +24,7 @@ export interface User {
   isShadowBanned: boolean;
   shadowBannedAt: Date | null;
   shadowBannedUntil: Date | null;
+  isPrivate: boolean;
 
   createdAt: Date;
   updatedAt: Date;

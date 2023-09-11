@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import UsersController from '@controllers/users.controller';
-import { Routes } from '@interfaces/routes.interface';
+import { Routes } from '@/interfaces/project/routes.interface';
 import authMiddleware from '@/middlewares/auth.middleware';
 import blockedMiddleware from '@/middlewares/blocked.middleware';
 

@@ -21,7 +21,7 @@ export async function up(knex: Knex): Promise<void> {
   ADD COLUMN unarchived BOOLEAN GENERATED ALWAYS AS (IF(deletedAt IS NULL, 1, NULL)) VIRTUAL
 `);
 
-  // UNIQUE KEY (snapInstanceShapeId, name, unarchived)
+  // UNIQUE KEY (snapShapeId, name, unarchived)
   await knex.schema.raw(`
   CREATE UNIQUE INDEX sisp_unarchived_uindex
   ON snaps_shapes_positions (snapShapeId, name, unarchived)

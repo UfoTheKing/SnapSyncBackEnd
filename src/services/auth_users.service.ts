@@ -59,6 +59,10 @@ class AuthUserService {
 
     return authUser;
   }
+
+  public async deleteAuthUser(id: number): Promise<void> {
+    await AuthUsers.query().deleteById(id);
+  }
 }
 
 export default AuthUserService;

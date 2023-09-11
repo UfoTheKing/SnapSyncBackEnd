@@ -9,7 +9,8 @@ export interface SnapInstance {
   timerDurationSeconds: number;
   timerStartAt: Date | null;
 
-  imageKey: string | null;
+  cdlPublicId: string | null;
+  cdlPublicUrl: string | null;
   collageCreatedAt: Date | null;
 
   createdAt: Date;

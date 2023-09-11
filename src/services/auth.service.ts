@@ -23,6 +23,7 @@ import UserService from './users.service';
 import { AuthUsers } from '@/models/auth_users.model';
 import sizeOf from 'image-size';
 import sharp from 'sharp';
+import TwilioService from './twilio.service';
 
 const s3 = new S3Client({
   credentials: {
@@ -90,9 +91,10 @@ class AuthService {
     const phoneResults = phone(phoneNumber);
     if (!phoneResults.isValid) throw new HttpException(422, 'Phone number is not valid');
 
-    // TODO: controllare se l'OTP è valido
+    // controllare se l'OTP è valido
+    let isValid = true; // await new TwilioService().verifyOtp(phoneNumber, otp);
 
-    return true;
+    return isValid;
   };
 
   public resendOtp = async (phoneNumber: string): Promise<void> => {
@@ -101,7 +103,8 @@ class AuthService {
     const phoneResults = phone(phoneNumber);
     if (!phoneResults.isValid) throw new HttpException(422, 'Phone number is not valid');
 
-    // TODO: resend OTP con twilio
+    // resend OTP con twilio
+    // await new TwilioService().sendOtp(phoneNumber);
   };
 
   public loginWithPhoneNumber = async (data: LogInPhoneNumberDto, device: Device | null): Promise<LogInResponse> => {
@@ -182,7 +185,7 @@ class AuthService {
 
   public validateUsername = async (username: string): Promise<boolean> => {
     const findUser = await Users.query().whereNotDeleted().where('username', username.toLocaleLowerCase().trim()).first();
-    if (findUser) throw new HttpException(409, `${username} already exists`);
+    if (findUser) throw new HttpException(409, `Ops! An account with the username ${username} already exists`);
 
     return true;
   };
@@ -213,15 +216,15 @@ class AuthService {
     if (!phoneResults.isValid) throw new HttpException(422, 'Phone number is not valid');
 
     // Faccio l'upload dell'immagine del profilo
-    const originalHeight = sizeOf(data.file.path).height;
-    const originalWidth = sizeOf(data.file.path).width;
+    const originalHeight = sizeOf(data.file.buffer).height;
+    const originalWidth = sizeOf(data.file.buffer).width;
     if (!originalHeight || !originalWidth) throw new HttpException(400, 'Invalid image');
 
     // Salvo l'immagine nella cartella uploads/avatars
     const key = `avatars/${generateRandomKey()}`;
 
     if (originalHeight !== AVATAR_SIZE || originalWidth !== AVATAR_SIZE) {
-      const resizedImageWithoutAlpha = await sharp(data.file.path).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
+      const resizedImageWithoutAlpha = await sharp(data.file.buffer).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
 
       const params: PutObjectCommandInput = {
         Bucket: S3_BUCKET_NAME,

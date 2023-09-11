@@ -8,6 +8,9 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger('userId').unsigned().index().references('id').inTable('users').onDelete('CASCADE').notNullable();
     table.bigInteger('snapSyncId').unsigned().index().references('id').inTable('snaps_sync').onDelete('CASCADE').notNullable();
     table.bigInteger('snapShapePositionId').unsigned().index().references('id').inTable('snaps_shapes_positions').onDelete('CASCADE').notNullable();
+    table.bigInteger('locationId').unsigned().index().references('id').inTable('locations').onDelete('SET NULL').nullable();
+
+    table.dateTime('snappedAtUtc').notNullable();
 
     table.timestamp('createdAt').defaultTo(knex.fn.now());
     table.timestamp('updatedAt').defaultTo(knex.fn.now());

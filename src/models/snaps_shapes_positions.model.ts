@@ -16,6 +16,8 @@ export class SnapsShapesPositions extends softDelete(Model) implements SnapShape
   name!: string;
 
   ownerPosition!: boolean;
+  width!: number;
+  height!: number;
 
   createdAt!: Date;
   updatedAt!: Date;

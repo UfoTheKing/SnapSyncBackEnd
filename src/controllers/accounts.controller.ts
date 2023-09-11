@@ -1,6 +1,7 @@
 import { HttpException } from '@/exceptions/HttpException';
 import { RequestWithFile, RequestWithUser } from '@/interfaces/auth.interface';
 import UserService from '@/services/users.service';
+import { boolean } from 'boolean';
 import { NextFunction, Response } from 'express';
 import * as yup from 'yup';
 
@@ -36,14 +37,8 @@ class AccountsController {
 
       const avatar = req.file;
 
-      const user = await this.userService.findUserById(req.user.id);
-      if (!user) {
-        throw new HttpException(404, 'User not found');
-      }
-
-      await this.userService.updateUserAvatar(user.id, avatar);
-
-      const profilePictureUrl = await this.userService.findUserProfilePictureUrlById(user.id);
+      await this.userService.updateUserAvatar(req.user.id, avatar);
+      const profilePictureUrl = await this.userService.findUserProfilePictureUrlById(req.user.id);
 
       let response = {
         message: 'ok',
@@ -51,6 +46,28 @@ class AccountsController {
       };
 
       res.status(200).json({ ...response });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public setIsPrivate = async (req: RequestWithUser, res: Response, next: NextFunction) => {
+    const validationSchema = yup.object().shape({
+      isPrivate: yup.boolean().required(),
+    });
+
+    try {
+      await validationSchema.validate(req.body, { abortEarly: false });
+
+      if (boolean(req.body.isPrivate) === boolean(req.user.isPrivate)) {
+        throw new HttpException(400, 'Bad request');
+      }
+
+      await this.userService.updateIsPrivate(req.user.id, boolean(req.body.isPrivate));
+
+      res.status(200).json({
+        message: 'ok',
+      });
     } catch (error) {
       next(error);
     }
@@ -71,12 +88,7 @@ class AccountsController {
 
       const { username } = req.body;
 
-      const user = await this.userService.findUserById(req.user.id);
-      if (!user) {
-        throw new HttpException(404, 'User not found');
-      }
-
-      await this.userService.updateUserUsername(user.id, username);
+      await this.userService.updateUserUsername(req.user.id, username);
 
       let response = {
         message: 'ok',
@@ -104,11 +116,7 @@ class AccountsController {
 
       const { fullname } = req.body;
 
-      const user = await this.userService.findUserById(req.user.id);
-      if (!user) throw new HttpException(404, 'User not found');
-
-      await this.userService.updateUserFullName(user.id, fullname);
-
+      await this.userService.updateUserFullName(req.user.id, fullname);
       let response = {
         message: 'ok',
         fullname,
@@ -130,10 +138,7 @@ class AccountsController {
 
       const { biography } = req.body;
 
-      const user = await this.userService.findUserById(req.user.id);
-      if (!user) throw new HttpException(404, 'User not found');
-
-      await this.userService.updateUserBiography(user.id, biography);
+      await this.userService.updateUserBiography(req.user.id, biography);
 
       let response = {
         message: 'ok',

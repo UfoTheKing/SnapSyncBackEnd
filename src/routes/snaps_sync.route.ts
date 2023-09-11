@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Routes } from '@interfaces/routes.interface';
+import { Routes } from '@/interfaces/project/routes.interface';
 import SnapsSyncController from '@/controllers/snaps_sync.controller';
 import multer from 'multer';
 import { HttpException } from '@/exceptions/HttpException';
@@ -39,8 +39,15 @@ class SnapsSyncRoute implements Routes {
   private initializeRoutes() {
     this.router.get(`${this.path}/shapes`, this.snapsSyncController.getSnapsSyncShapes);
 
+    this.router.get(`${this.path}/:key/check`, authMiddleware, this.snapsSyncController.checkSnapInstance);
+
+    // this.router.get(`${this.path}/:id/comments`, authMiddleware, this.snapsSyncController.getComments);
+    // this.router.get(`${this.path}/:id/comments/:commentId/child_comments`, authMiddleware, this.snapsSyncController.getChildComments);
+
     this.router.post(`${this.path}/:key/take_snap`, authMiddleware, upload.single('snap'), this.snapsSyncController.takeSnap);
     this.router.post(`${this.path}/:key/publish`, authMiddleware, this.snapsSyncController.publishSnap);
+
+    this.router.post(`${this.path}/cloundinary_webhook`, this.snapsSyncController.cloudinaryWebhook);
   }
 }
 

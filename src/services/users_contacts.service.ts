@@ -119,6 +119,10 @@ class UserContactService {
 
     return createData;
   }
+
+  public async deleteUserContactsByUserIdAndNotInContactIds(userId: number, contactIds: Array<number>): Promise<void> {
+    await UsersContacts.query().whereNotDeleted().where('userId', userId).whereNotIn('id', contactIds).delete();
+  }
 }
 
 export default UserContactService;

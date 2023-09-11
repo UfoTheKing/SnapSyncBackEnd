@@ -14,6 +14,9 @@ export class SnapsSyncUsers extends softDelete(Model) implements SnapSyncUser {
   snapSyncId!: number;
   userId!: number;
   snapShapePositionId!: number;
+  locationId!: number | null;
+
+  snappedAtUtc!: Date;
 
   createdAt!: Date;
   updatedAt!: Date;

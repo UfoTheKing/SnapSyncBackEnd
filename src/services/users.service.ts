@@ -20,6 +20,7 @@ import sizeOf from 'image-size';
 import sharp from 'sharp';
 import { boolean } from 'boolean';
 import knex from '@/databases';
+import { UsersContacts } from '@/models/users_contacts.model';
 
 const s3 = new S3Client({
   credentials: {
@@ -54,6 +55,39 @@ class UserService {
     if (!findUser) throw new HttpException(404, "User doesn't exist");
 
     return findUser;
+  }
+
+  public async findSmallUserById(userId: number, loggedUserId?: number): Promise<SmallUser> {
+    let findUser: User = await Users.query().whereNotDeleted().findById(userId);
+    if (!findUser) throw new HttpException(404, "User doesn't exist");
+
+    let profilePictureUrl: string = await this.findUserProfilePictureUrlById(userId);
+
+    let isContact = undefined;
+
+    if (loggedUserId) {
+      const findLoggedUser = await Users.query().whereNotDeleted().findById(loggedUserId);
+      if (loggedUserId) {
+        const userContact = await UsersContacts.query()
+          .whereNotDeleted()
+          .where('userId', findLoggedUser.id)
+          .andWhere('contactUserId', findUser.id)
+          .first();
+        if (userContact) isContact = true;
+      }
+    }
+
+    let user: SmallUser = {
+      id: findUser.id,
+      username: findUser.username,
+      fullName: findUser.fullName,
+      isVerified: boolean(findUser.isVerified),
+      profilePictureUrl: profilePictureUrl,
+
+      isContact: isContact,
+    };
+
+    return user;
   }
 
   public async findUserProfilePictureUrlById(userId: number): Promise<string> {
@@ -214,7 +248,7 @@ class UserService {
     // Salvo l'immagine nella cartella uploads/avatars
     const key = `avatars/${generateRandomKey()}`;
     if (originalHeight !== AVATAR_SIZE || originalWidth !== AVATAR_SIZE) {
-      const resizedImageWithoutAlpha = await sharp(data.path).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
+      const resizedImageWithoutAlpha = await sharp(data.buffer).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
 
       const params: PutObjectCommandInput = {
         Bucket: S3_BUCKET_NAME,
@@ -249,6 +283,19 @@ class UserService {
     });
 
     return updatedUser;
+  }
+
+  public async updateIsPrivate(id: number, isPrivate: boolean): Promise<User> {
+    const findUser = await Users.query().whereNotDeleted().findById(id);
+    if (!findUser) throw new HttpException(404, "User doesn't exist");
+
+    const updateUser: User = await Users.query().updateAndFetchById(findUser.id, {
+      isPrivate: isPrivate,
+
+      updatedAt: new Date(),
+    });
+
+    return updateUser;
   }
 
   public async updateUserUsername(userId: number, username: string): Promise<User> {

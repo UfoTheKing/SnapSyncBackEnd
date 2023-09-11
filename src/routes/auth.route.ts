@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import AuthController from '@controllers/auth.controller';
-import { Routes } from '@interfaces/routes.interface';
+import { Routes } from '@/interfaces/project/routes.interface';
 import countryMiddleware from '@/middlewares/country.middleware';
 import deviceMiddleware from '@/middlewares/device.middleware';
 import authMiddleware from '@/middlewares/auth.middleware';
 import multer from 'multer';
 import { HttpException } from '@/exceptions/HttpException';
 
-const storage = multer.diskStorage({
+const storage = multer.memoryStorage({
   destination: './uploads/avatars/',
   filename: function (req, file, cb) {
     cb(null, Date.now() + '-' + file.originalname);
@@ -40,9 +40,11 @@ class AuthRoute implements Routes {
 
   private initializeRoutes() {
     this.router.get(`${this.path}/get_session_id`, this.authController.getSessionId);
+    this.router.get(`${this.path}/get_country_from_ip`, countryMiddleware, this.authController.getCountryFromIp);
 
     this.router.post(`${this.path}/fullname`, this.authController.validateFullname);
     this.router.post(`${this.path}/date_of_birth`, this.authController.validateDateOfBirth);
+
     this.router.post(`${this.path}/phone_number`, this.authController.validatePhoneNumber);
     this.router.post(`${this.path}/otp`, deviceMiddleware, this.authController.validateOtp);
     this.router.post(`${this.path}/username`, this.authController.validateUsername);

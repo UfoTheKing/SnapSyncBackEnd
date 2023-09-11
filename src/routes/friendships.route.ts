@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { Routes } from '@interfaces/routes.interface';
+import { Routes } from '@/interfaces/project/routes.interface';
 import authMiddleware from '@/middlewares/auth.middleware';
 import blockedMiddleware from '@/middlewares/blocked.middleware';
 import FriendshipsController from '@/controllers/friendships.controller';
+import privateMiddleware from '@/middlewares/private.middleware';
 
 class FriendshipsRoute implements Routes {
   public path = '/friendships';
@@ -14,11 +15,10 @@ class FriendshipsRoute implements Routes {
   }
 
   private initializeRoutes() {
-    this.router.get(`${this.path}/:userId/friends`, authMiddleware, blockedMiddleware, this.friendshipsController.getUserFriends);
+    this.router.get(`${this.path}/:userId/friends`, authMiddleware, blockedMiddleware, privateMiddleware, this.friendshipsController.getUserFriends);
 
     this.router.get(`${this.path}/incoming_requests`, authMiddleware, this.friendshipsController.getIncomingRequests);
     this.router.get(`${this.path}/outgoing_requests`, authMiddleware, this.friendshipsController.getOutgoingRequests);
-    this.router.post(`${this.path}/suggest`, authMiddleware, this.friendshipsController.suggestFriends);
 
     this.router.get(`${this.path}/show/:userId`, authMiddleware, blockedMiddleware, this.friendshipsController.showFriendship);
     this.router.post(`${this.path}/show_many`, authMiddleware, this.friendshipsController.showManyFriendships);
