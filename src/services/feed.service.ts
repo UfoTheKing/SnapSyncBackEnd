@@ -178,7 +178,7 @@ class FeedService {
 
       user: smallUser,
 
-      createdAt: snapSyncComment.createdAtUtc,
+      createdAt: snapSyncComment.createdAt,
     };
 
     return obj;

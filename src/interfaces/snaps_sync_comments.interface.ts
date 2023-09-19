@@ -5,7 +5,6 @@ export interface SnapSyncComment {
   snapSyncParentCommentId: number | null;
   text: string | null;
 
-  createdAtUtc: Date;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;

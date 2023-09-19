@@ -15,12 +15,12 @@ class IndexController {
 
       // await this.expoService.sendSnapSyncNotification(key, usersIds, owner);
 
-      await SnapsSyncComments.query().insert({
-        userId: 9,
-        snapSyncId: 1,
-        text: 'test',
-        createdAtUtc: nowUtc(),
-      });
+      // await SnapsSyncComments.query().insert({
+      //   userId: 9,
+      //   snapSyncId: 1,
+      //   text: 'test',
+      //   createdAtUtc: nowUtc(),
+      // });
 
       res.status(200).json({ message: 'ok' });
     } catch (error) {

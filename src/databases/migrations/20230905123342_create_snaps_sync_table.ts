@@ -9,7 +9,8 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger('snapShapeId').unsigned().index().references('id').inTable('snaps_shapes').onDelete('CASCADE').notNullable();
     table.bigInteger('snapInstanceId').unsigned().index().references('id').inTable('snaps_instances').onDelete('CASCADE').notNullable();
 
-    table.string('imageKey').nullable().comment('S3 key of the image');
+    table.string('s3CollageKey').comment('S3 key of the image');
+    table.string('blurhash').notNullable().comment('Blurhash of the image');
 
     table.timestamp('createdAt').defaultTo(knex.fn.now());
     table.timestamp('updatedAt').defaultTo(knex.fn.now());

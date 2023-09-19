@@ -10,6 +10,8 @@ export async function up(knex: Knex): Promise<void> {
     table.string('name', 64).notNullable();
 
     table.boolean('ownerPosition').defaultTo(false).comment('Is this the owner position?');
+    table.integer('width').unsigned().notNullable().defaultTo(540);
+    table.integer('height').unsigned().notNullable().defaultTo(960);
 
     table.timestamp('createdAt').defaultTo(knex.fn.now());
     table.timestamp('updatedAt').defaultTo(knex.fn.now());

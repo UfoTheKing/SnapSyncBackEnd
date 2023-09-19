@@ -10,7 +10,8 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger('snapShapePositionId').unsigned().index().references('id').inTable('snaps_shapes_positions').onDelete('CASCADE').notNullable();
     table.bigInteger('locationId').unsigned().index().references('id').inTable('locations').onDelete('SET NULL').nullable();
 
-    table.dateTime('snappedAtUtc').notNullable();
+    table.string('s3ImageKey').notNullable();
+    table.dateTime('snappedAt').notNullable();
 
     table.timestamp('createdAt').defaultTo(knex.fn.now());
     table.timestamp('updatedAt').defaultTo(knex.fn.now());

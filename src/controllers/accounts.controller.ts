@@ -1,12 +1,23 @@
 import { HttpException } from '@/exceptions/HttpException';
 import { RequestWithFile, RequestWithUser } from '@/interfaces/auth.interface';
 import UserService from '@/services/users.service';
+import ValidationService from '@/services/validation.service';
+import {
+  MAX_BIO_LENGTH,
+  MAX_FULL_NAME_LENGTH,
+  MAX_USERNAME_LENGTH,
+  MIN_FULL_NAME_LENGTH,
+  MIN_USERNAME_LENGTH,
+  REGEX_FULL_NAME,
+  REGEX_USERNAME,
+} from '@/utils/validation';
 import { boolean } from 'boolean';
-import { NextFunction, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import * as yup from 'yup';
 
 class AccountsController {
   public userService = new UserService();
+  public validationService = new ValidationService();
 
   public getWebFormData = async (req: RequestWithUser, res: Response, next: NextFunction) => {
     try {
@@ -20,6 +31,65 @@ class AccountsController {
       };
 
       res.status(200).json({ formData });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getUsernameRules = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      let response = {
+        maxLength: MAX_USERNAME_LENGTH,
+        minLength: MIN_USERNAME_LENGTH,
+        regex: REGEX_FULL_NAME,
+      };
+
+      res.status(200).json({ field: 'username', rules: response });
+    } catch (error) {
+      next(error);
+    }
+  };
+  public getFullNameRules = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      let response = {
+        maxLength: MAX_FULL_NAME_LENGTH,
+        minLength: MIN_FULL_NAME_LENGTH,
+        regex: REGEX_FULL_NAME,
+      };
+
+      res.status(200).json({ field: 'fullName', rules: response });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getBioRules = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      let response = {
+        maxLength: MAX_BIO_LENGTH,
+      };
+
+      res.status(200).json({ field: 'bio', rules: response });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public checkBio = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { bio } = req.body;
+      if (bio === undefined) {
+        throw new HttpException(400, 'Missing bio');
+      }
+
+      const { isValid, message } = await this.validationService.validateBio(bio);
+      if (!isValid) {
+        throw new HttpException(422, message);
+      }
+
+      res.status(200).json({
+        message: 'ok',
+      });
     } catch (error) {
       next(error);
     }
@@ -78,9 +148,9 @@ class AccountsController {
       username: yup
         .string()
         .required()
-        .min(3)
-        .max(30)
-        .matches(/^[a-zA-Z0-9_]+$/, 'Username must contain only letters, numbers and underscores'),
+        .min(MIN_USERNAME_LENGTH)
+        .max(MAX_USERNAME_LENGTH)
+        .matches(REGEX_USERNAME, 'Username must contain only letters, numbers and underscores'),
     });
 
     try {
@@ -103,23 +173,23 @@ class AccountsController {
 
   public setFullName = async (req: RequestWithUser, res: Response, next: NextFunction) => {
     const validationSchema = yup.object().shape({
-      fullname: yup
+      fullName: yup
         .string()
         .required()
-        .min(2)
-        .max(100)
-        .matches(/^[a-zA-Z\s]+$/, 'Fullname must contain only letters and spaces'),
+        .min(MIN_FULL_NAME_LENGTH)
+        .max(MAX_FULL_NAME_LENGTH)
+        .matches(REGEX_FULL_NAME, 'Fullname must contain only letters and spaces'),
     });
 
     try {
       await validationSchema.validate(req.body, { abortEarly: false });
 
-      const { fullname } = req.body;
+      const { fullName } = req.body;
 
-      await this.userService.updateUserFullName(req.user.id, fullname);
+      await this.userService.updateUserFullName(req.user.id, fullName);
       let response = {
         message: 'ok',
-        fullname,
+        fullName,
       };
 
       res.status(200).json({ ...response });
@@ -130,7 +200,7 @@ class AccountsController {
 
   public setBiography = async (req: RequestWithUser, res: Response, next: NextFunction) => {
     const validationSchema = yup.object().shape({
-      biography: yup.string().max(150).nullable(),
+      biography: yup.string().max(MAX_BIO_LENGTH).nullable(),
     });
 
     try {

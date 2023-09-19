@@ -40,5 +40,5 @@ export interface SmallUser {
   isVerified: boolean;
   profilePictureUrl: string;
 
-  isContact?: boolean;
+  socialContext?: string;
 }

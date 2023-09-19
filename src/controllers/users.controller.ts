@@ -29,37 +29,25 @@ class UsersController {
 
       const isMyProfile = req.user.id === userId;
 
-      let friendsCount = await this.friendService.findFriendsCountByUserId(userId, req.user.id);
-      let friendship_status = await this.friendshipStatusService.getFriendshipStatus(req.user.id, userId);
+      let friendsCount: number | undefined = undefined;
+      let mutualFriends: MutualFriends | undefined = undefined;
 
       let snapsCount = await this.snapSyncService.findSnapsCountByUserId(userId, req.user.id);
 
       let userProfileImageUrl = await this.userService.findUserProfilePictureUrlById(userId);
-
       let biography = await this.userService.findUserProfileBiographyById(userId, req.user.id);
 
-      // let currentDate = new Date();
-      // const currentMonth = currentDate.getMonth() + 1;
-      // const currentYear = currentDate.getFullYear();
-
-      // const calendar = await this.storyService.findStoryCalendarNodesByUserId(userId, currentMonth, currentYear);
-
-      let mutualFriends: MutualFriends | undefined = undefined;
-      if (!friendship_status.isFriend && !isMyProfile) {
-        let commonFriends = await this.friendService.findCommonFriends(req.user.id, userId);
-
+      if (isMyProfile) {
+        let f = await this.friendService.findLoggedUserFriends(req.user.id, 1, 1);
+        friendsCount = f.pagination.total;
+      } else {
+        let m = await this.friendService.findMutualFriends(req.user.id, userId, 1, 3);
         mutualFriends = {
-          count: commonFriends.pagination.total,
-          nodes: commonFriends.users.map(friend => {
-            return {
-              id: friend.id,
-              username: friend.username,
-              fullName: friend.fullName,
-              isVerified: boolean(friend.isVerified),
-              profilePictureUrl: friend.profilePictureUrl,
-            };
-          }),
+          count: 0,
+          nodes: [],
         };
+        mutualFriends.count = m.pagination.total;
+        mutualFriends.nodes = m.users;
       }
 
       let userProfile: UserProfile = {
@@ -72,8 +60,8 @@ class UsersController {
         biography: biography,
 
         mutualFriends: mutualFriends,
-
         friendsCount: friendsCount,
+
         snapsCount: snapsCount,
 
         isMyProfile: isMyProfile,
@@ -94,7 +82,7 @@ class UsersController {
       const findOneUserData: User = await this.userService.findUserById(userId);
 
       let userProfileImageUrl = await this.userService.findUserProfilePictureUrlById(userId);
-      let friendsCount = await this.friendService.findFriendsCountByUserId(userId, req.user.id);
+      let friendsCount = 0;
       let snapsCount = await this.snapSyncService.findSnapsCountByUserId(userId, req.user.id);
 
       let response = {

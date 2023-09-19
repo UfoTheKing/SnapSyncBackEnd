@@ -2,8 +2,10 @@ export interface SnapShape {
   id: number;
   name: string;
   numberOfUsers: number;
+
   iconKey: string;
   focusedIconKey: string;
+
   columns: number;
   rows: number;
   spacing: number;

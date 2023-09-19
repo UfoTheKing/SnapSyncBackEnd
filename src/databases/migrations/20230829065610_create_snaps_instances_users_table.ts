@@ -14,8 +14,9 @@ export async function up(knex: Knex): Promise<void> {
     table.boolean('isJoined').defaultTo(false).comment('If user with wss connection joined the snap instance');
     table.timestamp('joinedAt').nullable().comment('When user with wss connection joined the snap instance');
 
+    table.string('s3Key').nullable();
     table.string('cdlPublicId').nullable();
-    table.dateTime('snappedAtUtc').nullable();
+    table.timestamp('snappedAt').nullable();
 
     table.timestamp('createdAt').defaultTo(knex.fn.now());
     table.timestamp('updatedAt').defaultTo(knex.fn.now());

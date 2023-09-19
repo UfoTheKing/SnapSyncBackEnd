@@ -5,7 +5,8 @@ export interface SnapSyncUser {
   snapShapePositionId: number;
   locationId: number | null;
 
-  snappedAtUtc: Date;
+  s3ImageKey: string;
+  snappedAt: Date;
 
   createdAt: Date;
   updatedAt: Date;

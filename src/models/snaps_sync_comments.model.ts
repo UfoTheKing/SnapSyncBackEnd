@@ -16,7 +16,6 @@ export class SnapsSyncComments extends softDelete(Model) implements SnapSyncComm
 
   text!: string | null;
 
-  createdAtUtc!: Date;
   createdAt!: Date;
   updatedAt!: Date;
   deletedAt!: Date | null;

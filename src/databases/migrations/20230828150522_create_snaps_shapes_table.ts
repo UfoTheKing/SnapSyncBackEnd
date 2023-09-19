@@ -11,6 +11,12 @@ export async function up(knex: Knex): Promise<void> {
     table.string('iconKey', 255).notNullable().comment('Icon key');
     table.string('focusedIconKey', 255).notNullable().comment('Focused icon key');
 
+    table.integer('columns').unsigned().notNullable().defaultTo(0);
+    table.integer('rows').unsigned().notNullable().defaultTo(0);
+    table.integer('spacing').unsigned().notNullable().defaultTo(1);
+    table.integer('width').unsigned().notNullable().defaultTo(1080);
+    table.integer('height').unsigned().notNullable().defaultTo(1920);
+
     table.timestamp('createdAt').defaultTo(knex.fn.now());
     table.timestamp('updatedAt').defaultTo(knex.fn.now());
     table.timestamp('deletedAt').nullable().defaultTo(null);

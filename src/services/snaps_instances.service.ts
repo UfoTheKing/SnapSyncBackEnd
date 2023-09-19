@@ -4,7 +4,7 @@ import { SnapInstance } from '@/interfaces/snaps_instances.interface';
 import { SnapsInstances } from '@/models/snaps_instances.model';
 import { SnapsInstancesUsers } from '@/models/snaps_instances_users.model';
 import { Users } from '@/models/users.model';
-import { isEmpty, nowUtc } from '@/utils/util';
+import { isEmpty } from '@/utils/util';
 import { boolean } from 'boolean';
 import {
   CLOUDINARY_API_KEY,
@@ -24,9 +24,10 @@ import { MulterUploadFile } from '@/interfaces/auth.interface';
 import streamifier from 'streamifier';
 import sizeOf from 'image-size';
 import fetch from 'cross-fetch';
-import moment from 'moment';
 import sharp from 'sharp';
 import { SnapShape } from '@/interfaces/snaps_shapes.interface';
+import SnapShapeService from './snaps_shapes.service';
+import fs from 'fs';
 
 const s3 = new S3Client({
   credentials: {
@@ -69,13 +70,10 @@ class SnapInstanceService {
     if (!findSnapInstanceUser) throw new HttpException(403, "You can't join this SnapSync");
 
     if (boolean(findSnapInstanceUser.isJoined)) throw new HttpException(403, 'You have already joined this SnapSync');
-    if (findSnapInstanceUser.snappedAtUtc) throw new HttpException(403, 'You have already taken a snap of this SnapSync');
+    if (findSnapInstanceUser.snappedAt) throw new HttpException(403, 'You have already taken a snap of this SnapSync');
   }
 
-  public async takeSnap(data: TakeSnapDto): Promise<{
-    allUsersHaveTakenSnap: boolean;
-    image: string | null;
-  }> {
+  public async takeSnap(data: TakeSnapDto): Promise<boolean> {
     if (isEmpty(data)) throw new HttpException(400, 'Ops! Data is empty');
     if (!data.file) throw new HttpException(400, 'No snap file provided!');
     if (!data.file.buffer) throw new HttpException(400, 'No snap file provided!');
@@ -93,7 +91,7 @@ class SnapInstanceService {
     if (!findSnapInstanceUser) throw new HttpException(403, "You can't take a snap of this SnapSync");
 
     // Controllo se l'utente ha già fatto uno snap di questo SnapInstance
-    if (findSnapInstanceUser.snappedAtUtc) {
+    if (findSnapInstanceUser.snappedAt) {
       throw new HttpException(403, 'You have already taken a snap of this SnapSync');
     }
 
@@ -135,11 +133,15 @@ class SnapInstanceService {
     if (!originalWidth || !originalHeight) throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
     let buffer: Buffer = data.file.buffer;
     if (originalHeight !== findSnapInstanceUserPosition.height || originalWidth !== findSnapInstanceUserPosition.width) {
+      console.log('RESIZE', findSnapInstanceUserPosition.width, findSnapInstanceUserPosition.height);
       // Faccio il resize dell'immagine in base alla shapePosition
       buffer = await sharp(data.file.buffer)
         .resize(findSnapInstanceUserPosition.width, findSnapInstanceUserPosition.height)
         .withMetadata()
         .toBuffer();
+
+      // Salvo il file nella cartella temporanea
+      // fs.writeFileSync(`../uploads/snaps_sync/${findSnapInstance.id}_${findUser.id}_${Date.now()}.jpg`, buffer);
     }
 
     // Salvo lo snap su S3 + Cloudinary
@@ -148,17 +150,20 @@ class SnapInstanceService {
     const cdlPublicId = `${findSnapInstanceUserPosition.name}_${findUser.id}_${Date.now()}`;
     const publicId = `${cdlFolder}/${cdlPublicId}`;
     try {
-      // await this.uploadSnapBufferToS3(data.file, s3BucketKey);
+      await this.uploadSnapBufferToS3(buffer, s3BucketKey, data.file.mimetype);
       await this.uploadSnapBufferToCloudinary(buffer, cdlFolder, cdlPublicId);
 
-      await SnapsInstancesUsers.query().whereNotDeleted().patch({ cdlPublicId: publicId, snappedAtUtc: nowUtc() }).findById(findSnapInstanceUser.id);
+      await SnapsInstancesUsers.query()
+        .whereNotDeleted()
+        .patch({ s3Key: s3BucketKey, cdlPublicId: publicId, snappedAt: new Date() })
+        .findById(findSnapInstanceUser.id);
     } catch (error) {
       throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
     }
 
     const trx = await SnapsInstances.startTransaction();
-    let allUsersHaveTakenSnap = false;
-    let image: string | null = null;
+
+    let areAllSnapped = false;
 
     // Aggiorno lo SnapInstanceUser con l'imageKey ed eventualmente controllo se tutti gli utenti hanno fatto uno snap
     // Se questo blocco di codice fallisce, allora faccio il rollback della transazione e tramite il WebSocket mando a tutti gli utenti
@@ -167,24 +172,22 @@ class SnapInstanceService {
       const snapInstanceUsers = await SnapsInstancesUsers.query()
         .whereNotDeleted()
         .where({ snapInstanceId: findSnapInstance.id })
-        .whereNotNull('snappedAtUtc');
+        .whereNotNull('snappedAt');
 
       if (snapInstanceUsers.length === shape.numberOfUsers) {
-        allUsersHaveTakenSnap = true;
-
+        areAllSnapped = true;
         // Se tutti gli utenti hanno fatto uno snap, genero il collage e lo salvo su s3
         let media: string[] = snapInstanceUsers.map(snapInstanceUser => snapInstanceUser.cdlPublicId);
         const collagePublicId = `COLLAGE_${findSnapInstance.id}_${Date.now()}`;
         await this.generateCollage(media, collagePublicId, shape);
 
-        image = `https://res.cloudinary.com/dmwabqjto/image/upload/snaps_collage/${collagePublicId}`;
+        // image = `https://res.cloudinary.com/dmwabqjto/image/upload/snaps_collage/${collagePublicId}`;
 
-        // TODO: Salvo il colage generato nella SnapInstance -> questo sarebbe da fare nel Webhook di Cloudinary
-        let nowUtc = new Date(moment.utc().format('YYYY-MM-DD HH:mm:ss'));
-        await SnapsInstances.query(trx)
-          .whereNotDeleted()
-          .patch({ cdlPublicId: collagePublicId, cdlPublicUrl: image, collageCreatedAt: nowUtc })
-          .findById(findSnapInstance.id);
+        // // TODO: Salvo il colage generato nella SnapInstance -> questo sarebbe da fare nel Webhook di Cloudinary
+        // await SnapsInstances.query(trx)
+        //   .whereNotDeleted()
+        //   .patch({ cdlPublicId: collagePublicId, cdlPublicUrl: image, collageCreatedAt: new Date() })
+        //   .findById(findSnapInstance.id);
       }
 
       await trx.commit();
@@ -192,15 +195,15 @@ class SnapInstanceService {
       throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
     }
 
-    return { allUsersHaveTakenSnap, image: allUsersHaveTakenSnap ? image : null };
+    return areAllSnapped;
   }
 
-  private async uploadSnapBufferToS3(file: MulterUploadFile, s3BucketKey: string): Promise<void> {
+  private async uploadSnapBufferToS3(buffer: Buffer, s3BucketKey: string, ContentType: string): Promise<void> {
     const params: PutObjectCommandInput = {
       Bucket: S3_BUCKET_NAME,
       Key: s3BucketKey,
-      Body: file.buffer,
-      ContentType: file.mimetype,
+      Body: buffer,
+      ContentType: ContentType,
     };
 
     const command = new PutObjectCommand(params);
@@ -219,64 +222,22 @@ class SnapInstanceService {
   }
 
   private async generateCollage(media: string[], publicId: string, shape: SnapShape): Promise<void> {
+    // TODO: Genero il collage e lo salvo su S3
+    const grid = await new SnapShapeService().findSnapShapeNumberGridById(shape.id, false);
+
     let assest: Array<{ media: string }> = media.map(media => {
       return {
         media: media,
       };
     });
     var manifest_json = {
-      template: 'grid',
+      template: grid,
       width: shape.width,
       height: shape.height,
       columns: shape.columns,
       rows: shape.rows,
       spacing: shape.spacing,
       color: '#fff',
-      assetDefaults: { kind: 'upload', crop: 'fill', gravity: 'center' },
-      assets: assest,
-    };
-    let body = {
-      api_key: CLOUDINARY_API_KEY,
-      public_id: publicId,
-      resource_type: 'image',
-      upload_preset: 'snapsync',
-      manifest_json: JSON.stringify(manifest_json),
-    };
-
-    const cdlEndpoint = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/create_collage`;
-    try {
-      const response = await fetch(cdlEndpoint, {
-        method: 'POST',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!response.ok) {
-        console.log(JSON.stringify(response));
-        throw new HttpException(response.status, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-      }
-
-      const data = await response.json();
-      console.log(JSON.stringify(data));
-    } catch (error) {
-      console.log(JSON.stringify(error));
-      throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-    }
-  }
-
-  private async generateCollageTwo(media: string[], publicId: string): Promise<void> {
-    let assest: Array<{ media: string }> = media.map(media => {
-      return {
-        media: media,
-      };
-    });
-    var manifest_json = {
-      template: 'grid',
-      width: 384,
-      height: 384,
-      columns: 2,
-      rows: 2,
-      spacing: 2,
-      color: '#f7f7f7',
       assetDefaults: { kind: 'upload', crop: 'fill', gravity: 'center' },
       assets: assest,
     };

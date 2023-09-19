@@ -1,6 +1,5 @@
 import { Model, ModelObject } from 'objection';
 import objectionSoftDelete from 'objection-js-soft-delete';
-import { SnapInstance } from '@/interfaces/snaps_instances.interface';
 import { SnapSync } from '@/interfaces/snaps_sync.interface';
 
 // Specify the options for this plugin. This are the defaults.
@@ -15,7 +14,9 @@ export class SnapsSync extends softDelete(Model) implements SnapSync {
   userId!: number;
   snapShapeId!: number;
   snapInstanceId!: number;
-  imageKey!: string;
+
+  s3CollageKey!: string;
+  blurHash!: string;
 
   createdAt!: Date;
   updatedAt!: Date;

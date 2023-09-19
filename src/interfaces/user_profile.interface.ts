@@ -1,14 +1,8 @@
-import { FriendshipStatus } from './project/friendship_status.interface';
+import { SmallUser } from './users.interface';
 
 export interface MutualFriends {
   count: number;
-  nodes: Array<{
-    id: number;
-    username: string;
-    fullName: string | null;
-    isVerified: boolean;
-    profilePictureUrl: string;
-  }>;
+  nodes: Array<SmallUser>;
 }
 
 export interface Biography {
@@ -22,14 +16,6 @@ export interface BiographyEntity {
   text: string;
 }
 
-export interface UserCalendar {
-  [key: string]: {
-    storiesCount?: number;
-    dayOfWeek: number;
-    image?: string;
-  };
-}
-
 export interface UserProfile {
   id: number;
   username: string;
@@ -39,9 +25,9 @@ export interface UserProfile {
 
   biography: Biography | null;
 
-  mutualFriends?: MutualFriends;
+  mutualFriends?: MutualFriends; // Nel caso non sia il mio profilo
+  friendsCount?: number; // Nel caso sia il mio profilo
 
-  friendsCount: number;
   snapsCount: number;
 
   isMyProfile: boolean;

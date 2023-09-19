@@ -26,66 +26,52 @@ class SearchesController {
       // Prima recupero le richieste di amicizia che mi sono state inviate
       const incomingRequests = await this.friendService.findIncomingRequestsByUserId(req.user.id, 1, 20, query);
 
-      if (incomingRequests.pendingRequests.length > 0) {
+      if (incomingRequests.requests.length > 0) {
         response['requests'] = {
           title: 'Friendship Requests',
           showAcceptButton: true,
-          users: incomingRequests.pendingRequests.map(request => request.user),
+          users: incomingRequests.requests,
         };
 
-        incomingRequests.pendingRequests.forEach(request => {
-          excludingUsersIds.push(request.user.id);
-          responseUsers.push(request.user);
+        incomingRequests.requests.forEach(request => {
+          excludingUsersIds.push(request.id);
+          responseUsers.push(request);
         });
       }
 
       // Poi recupero le richieste di amicizia che ho inviato
       const outgoingRequests = await this.friendService.findOutgoingRequestsByUserId(req.user.id, 1, 20, query);
 
-      if (outgoingRequests.pendingRequests.length > 0) {
+      if (outgoingRequests.requests.length > 0) {
         response['requests_sent'] = {
           title: 'Requests Sent',
           showCancelButton: true,
-          users: outgoingRequests.pendingRequests.map(request => request.user),
+          users: outgoingRequests.requests,
         };
 
-        outgoingRequests.pendingRequests.forEach(request => {
-          excludingUsersIds.push(request.user.id);
-          responseUsers.push(request.user);
+        outgoingRequests.requests.forEach(request => {
+          excludingUsersIds.push(request.id);
+          responseUsers.push(request);
         });
       }
 
       // Poi recupero gli utenti da friends
-      const friendsFull = await this.friendService.findFriendsByUserId(req.user.id, req.user.id, 1, 20, query);
+      const friendsFull = await this.friendService.findLoggedUserFriends(req.user.id, 1, 20, query);
 
       if (friendsFull.friends.length > 0) {
         response['friends'] = {
           title: 'Friends',
           showRemoveButton: true,
-          users: friendsFull.friends.map(friend => friend.user),
+          users: friendsFull.friends,
         };
 
         friendsFull.friends.forEach(friend => {
-          excludingUsersIds.push(friend.user.id);
-          responseUsers.push(friend.user);
+          excludingUsersIds.push(friend.id);
+          responseUsers.push(friend);
         });
       }
 
-      // Poi recupero gli utenti da users_contacts
-      const contactsFull = await this.userContactService.findUserContactsExcludingBlockedUsersByUserId(req.user.id, 1, 20, query, excludingUsersIds);
-
-      if (contactsFull.contacts.length > 0) {
-        response['contacts'] = {
-          title: 'Contacts',
-          showAddButton: true,
-          users: contactsFull.contacts,
-        };
-
-        contactsFull.contacts.forEach(contact => {
-          excludingUsersIds.push(contact.id);
-          responseUsers.push(contact);
-        });
-      }
+      // TODO: Poi recupero gli utenti da users_contacts
 
       // Poi recupero gli utenti da users
       const usersFull = await this.userService.findUsersExcludingBlockedUsersByUserId(req.user.id, 1, 20, query, excludingUsersIds);

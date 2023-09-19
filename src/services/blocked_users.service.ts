@@ -7,7 +7,6 @@ import { isEmpty } from '@/utils/util';
 import Objection from 'objection';
 import FriendshipStatusService from './friendship_status.service';
 import { Friends } from '@/models/friends.model';
-import { SnapsInstances } from '@/models/snaps_instances.model';
 import FriendService from './friends.service';
 
 class BlockedUserService {

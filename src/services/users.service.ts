@@ -57,24 +57,15 @@ class UserService {
     return findUser;
   }
 
-  public async findSmallUserById(userId: number, loggedUserId?: number): Promise<SmallUser> {
+  public async findSmallUserById(userId: number, includeSocialContext: boolean = false): Promise<SmallUser> {
     let findUser: User = await Users.query().whereNotDeleted().findById(userId);
     if (!findUser) throw new HttpException(404, "User doesn't exist");
 
     let profilePictureUrl: string = await this.findUserProfilePictureUrlById(userId);
+    let socialContext: string | undefined = undefined;
 
-    let isContact = undefined;
-
-    if (loggedUserId) {
-      const findLoggedUser = await Users.query().whereNotDeleted().findById(loggedUserId);
-      if (loggedUserId) {
-        const userContact = await UsersContacts.query()
-          .whereNotDeleted()
-          .where('userId', findLoggedUser.id)
-          .andWhere('contactUserId', findUser.id)
-          .first();
-        if (userContact) isContact = true;
-      }
+    if (includeSocialContext) {
+      // Mi faccio tornare il SocialContext
     }
 
     let user: SmallUser = {
@@ -84,7 +75,7 @@ class UserService {
       isVerified: boolean(findUser.isVerified),
       profilePictureUrl: profilePictureUrl,
 
-      isContact: isContact,
+      socialContext: socialContext,
     };
 
     return user;
@@ -165,63 +156,36 @@ class UserService {
       hasMore: boolean;
     };
   }> {
-    const StoredProcedureName = `${DB_DATABASE}.GetUsersExcludingBlockedUsers`;
-    const StoredProcedureNameNumberOfFriends = `${DB_DATABASE}.GetNumberUsersExcludingBlockedUsers`;
+    const StoredProcedureName = `${DB_DATABASE}.GetUsersList`;
 
     // Converto l'array in una stringa con gli id separati da virgola
     let excludeUsersIdsString = excludeUsersIds.join(',');
 
     let offsetRows = (page - 1) * count;
     let limitRows = count;
+
     const results = await knex.raw(
       `CALL ${StoredProcedureName}(${userId}, ${limitRows}, ${offsetRows}, ${query ? "'" + query + "'" : null}, '${excludeUsersIdsString}')`,
     );
-    const resultsNumber = await knex.raw(
-      `CALL ${StoredProcedureNameNumberOfFriends}(${userId}, ${query ? "'" + query + "'" : null}, '${excludeUsersIdsString}')`,
-    );
 
-    let responseResults: Array<{
-      id: number;
-      username: string;
-      fullName: string;
-      isVerified: boolean;
-      profilePictureUrl: string;
-    }> = [];
-    let responseResultsNumber: {
-      numberOfUsers: number;
-    } = {
-      numberOfUsers: 0,
-    };
+    let responseResults: Array<User> = [];
+    let usersCount = 0;
 
     if (results.length > 0 && results[0].length > 0) {
       responseResults = results[0][0];
-    }
 
-    if (resultsNumber.length > 0 && resultsNumber[0].length > 0 && resultsNumber[0][0].length > 0) {
-      responseResultsNumber = resultsNumber[0][0][0].numUsers
-        ? {
-            numberOfUsers: resultsNumber[0][0][0].numUsers,
-          }
-        : { numberOfUsers: 0 };
+      if (results[0][0].length > 0) {
+        usersCount = results[0][0][0].count;
+      }
     }
 
     let users: Array<SmallUser> = [];
 
-    if (responseResultsNumber.numberOfUsers > 0) {
-      await Promise.all(
-        responseResults.map(async r => {
-          let profilePictureUrl: string = await new UserService().findUserProfilePictureUrlById(r.id);
-          let user: SmallUser = {
-            id: r.id,
-            username: r.username,
-            fullName: r.fullName,
-            isVerified: boolean(r.isVerified),
-            profilePictureUrl: profilePictureUrl,
-          };
-
-          users.push(user);
-        }),
-      );
+    if (responseResults.length > 0) {
+      for (let i = 0; i < responseResults.length; i++) {
+        let us = await new UserService().findSmallUserById(responseResults[i].id);
+        users.push(us);
+      }
     }
 
     return {
@@ -229,8 +193,8 @@ class UserService {
       pagination: {
         page: page,
         size: count,
-        total: responseResultsNumber.numberOfUsers,
-        hasMore: page * count < responseResultsNumber.numberOfUsers,
+        total: usersCount,
+        hasMore: page * count < usersCount,
       },
     };
   }

@@ -16,7 +16,23 @@ class FriendshipsController {
   public blockedUserService = new BlockedUserService();
   public friendService = new FriendService();
 
-  public getUserFriends = async (
+  public getUserFriends = async (req: RequestWithUser, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const page = Number(req.query.page) && Number(req.query.page) > 0 ? Number(req.query.page) : 1;
+      const count = Number(req.query.count) && Number(req.query.count) > 0 ? Number(req.query.count) : 12;
+      const query = (req.query.query && String(req.query.query).trim()) || null;
+
+      const friends = await this.friendService.findLoggedUserFriends(req.user.id, page, count, query);
+
+      res.status(200).json({
+        ...friends,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getMutualFriends = async (
     req: RequestWithUser & RequestWithBlocked & RequestWithIsPrivate,
     res: Response,
     next: NextFunction,
@@ -25,18 +41,20 @@ class FriendshipsController {
       if (req.isBlockedByViewer) throw new HttpException(404, 'User not found');
       if (req.isPrivate && !req.isMyFriend) throw new HttpException(403, 'This user has a private profile');
 
-      const userId = Number(req.params.userId);
-      const findUser = await this.userService.findUserById(userId);
-      if (!findUser) throw new HttpException(404, 'User not found');
-
       const page = Number(req.query.page) && Number(req.query.page) > 0 ? Number(req.query.page) : 1;
       const count = Number(req.query.count) && Number(req.query.count) > 0 ? Number(req.query.count) : 12;
       const query = (req.query.query && String(req.query.query).trim()) || null;
 
-      const friends = await this.friendService.findFriendsByUserId(findUser.id, req.user.id, page, count, query);
+      const userId = Number(req.params.userId);
+      const findUser = await this.userService.findUserById(userId);
+      if (!findUser) throw new HttpException(404, 'User not found');
+
+      if (findUser.id === req.user.id) throw new HttpException(400, "You can't search mutual friends with yourself");
+
+      const mutualFriends = await this.friendService.findMutualFriends(req.user.id, findUser.id, page, count, query);
 
       res.status(200).json({
-        ...friends,
+        ...mutualFriends,
       });
     } catch (error) {
       next(error);

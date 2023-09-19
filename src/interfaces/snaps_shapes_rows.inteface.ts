@@ -1,11 +1,7 @@
-export interface SnapSync {
+export interface SnapShapeRow {
   id: number;
-  userId: number;
   snapShapeId: number;
-  snapInstanceId: number;
-
-  s3CollageKey: string;
-  blurHash: string;
+  row: number;
 
   createdAt: Date;
   updatedAt: Date;

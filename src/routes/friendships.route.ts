@@ -15,7 +15,16 @@ class FriendshipsRoute implements Routes {
   }
 
   private initializeRoutes() {
-    this.router.get(`${this.path}/:userId/friends`, authMiddleware, blockedMiddleware, privateMiddleware, this.friendshipsController.getUserFriends);
+    // Route amici dell'utente loggato
+    this.router.get(`${this.path}/friends`, authMiddleware, this.friendshipsController.getUserFriends);
+
+    this.router.get(
+      `${this.path}/:userId/mutual_friends`,
+      authMiddleware,
+      blockedMiddleware,
+      privateMiddleware,
+      this.friendshipsController.getMutualFriends,
+    );
 
     this.router.get(`${this.path}/incoming_requests`, authMiddleware, this.friendshipsController.getIncomingRequests);
     this.router.get(`${this.path}/outgoing_requests`, authMiddleware, this.friendshipsController.getOutgoingRequests);

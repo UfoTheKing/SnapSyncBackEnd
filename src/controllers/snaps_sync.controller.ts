@@ -17,6 +17,7 @@ import SnapShapePositionService from '@/services/snaps_shapes_positions.service'
 import { CreateSnapSyncDto } from '@/dtos/snaps_sync.dto';
 import SnapSyncService from '@/services/snaps_sync.service';
 import { WssActions } from '@/utils/enums';
+import { SnapSyncShape } from '@/interfaces/project/snaps_sync.interface';
 
 class SnapsSyncController {
   private wsConnection: WebSocket | null = null;
@@ -81,24 +82,24 @@ class SnapsSyncController {
     try {
       const data = await this.snapShapeService.findAllSnapsShapes();
 
-      let shapes: Array<{
-        id: number;
-        name: string;
-        numberOfUsers: number;
-        iconUrl: string;
-        focusedIconUrl: string;
-        positions: Array<any>;
-      }> = [];
+      let shapes: Array<SnapSyncShape> = [];
 
       for (let i = 0; i < data.length; i++) {
         const iconUrl = await this.snapShapeService.findIconUrlById(data[i].id);
         const focusedIconUrl = await this.snapShapeService.findFocusedIconUrlById(data[i].id);
         const positions = await this.snapShapePositionService.findAllSnapsShapesPositionsBySnapShapeId(data[i].id);
+        const grid = await this.snapShapeService.findSnapShapeGridById(data[i].id, true);
 
         shapes.push({
           id: data[i].id,
           name: data[i].name,
           numberOfUsers: data[i].numberOfUsers,
+          grid: grid,
+          rows: data[i].rows,
+          columns: data[i].columns,
+          spacing: data[i].spacing,
+          width: data[i].width,
+          height: data[i].height,
           iconUrl: iconUrl,
           focusedIconUrl: focusedIconUrl,
           positions: positions,
@@ -121,7 +122,28 @@ class SnapsSyncController {
 
       await this.snapInstanceService.checkSnapInstance(snapInstance.id, req.user.id);
 
-      res.status(200).json({ message: 'ok', isJoinable: true });
+      const shape = await this.snapShapeService.findSnapShapeById(snapInstance.snapShapeId);
+      const iconUrl = await this.snapShapeService.findIconUrlById(snapInstance.snapShapeId);
+      const focusedIconUrl = await this.snapShapeService.findFocusedIconUrlById(snapInstance.snapShapeId);
+      const positions = await this.snapShapePositionService.findAllSnapsShapesPositionsBySnapShapeId(snapInstance.snapShapeId);
+      const grid = await this.snapShapeService.findSnapShapeGridById(snapInstance.snapShapeId, true);
+
+      const rShape: SnapSyncShape = {
+        id: shape.id,
+        name: shape.name,
+        numberOfUsers: shape.numberOfUsers,
+        grid: grid,
+        rows: shape.rows,
+        columns: shape.columns,
+        spacing: shape.spacing,
+        width: shape.width,
+        height: shape.height,
+        iconUrl: iconUrl,
+        focusedIconUrl: focusedIconUrl,
+        positions: positions,
+      };
+
+      res.status(200).json({ message: 'ok', isJoinable: true, shape: rShape });
     } catch (error) {
       next(error);
     }
@@ -154,15 +176,13 @@ class SnapsSyncController {
         file: req.file,
       };
 
-      const { allUsersHaveTakenSnap, image } = await this.snapInstanceService.takeSnap(data);
+      const areAllSnapped = await this.snapInstanceService.takeSnap(data);
 
-      if (allUsersHaveTakenSnap) {
-        // Mando un messaggio WebSocket a tutti i client
+      if (areAllSnapped) {
         let wssMessage: WssMessage = {
           action: WssActions.SEND_SNAP,
           data: {
             key: snapInstance.instanceKey,
-            image: image,
           },
         };
 
@@ -194,6 +214,8 @@ class SnapsSyncController {
     try {
       // TODO: controllare che il webhook sia stato inviato da Cloudinary con il signatureVerification
       // Se corretto salvare il file su s3 e mandare un messaggio WebSocket a tutti i client dello SnapSync
+
+      res.status(200).json({ message: 'ok' });
     } catch (error) {
       next(error);
     }

@@ -55,16 +55,20 @@ class SnapSyncService {
 
     const users = await SnapsInstancesUsers.query().whereNotDeleted().where({ snapInstanceId: data.snapInstanceId });
 
+    // Controllo se tutti gli utenti hanno scattato la foto
+    const usersWithoutImage = users.filter(user => !user.s3Key);
+    if (usersWithoutImage.length > 0) throw new HttpException(400, 'Ops! Some users have not taken the photo');
+
     const trx = await SnapsSync.startTransaction();
 
-    // TODO: Recuperare l'immagine da Cloudinary e salvarla su S3
+    // TODO: Recuperare l'immagine da Cloudinary e salvarla su S3 e generare il blurhash
 
     try {
       const createSnapSyncData: SnapSync = await SnapsSync.query(trx).insert({
         userId: findSnapInstance.userId,
         snapShapeId: findSnapInstance.snapShapeId,
         snapInstanceId: findSnapInstance.id,
-        imageKey: findSnapInstance.cdlPublicUrl, // TODO: Change this
+        s3CollageKey: findSnapInstance.cdlPublicUrl, // TODO: Change this
       });
 
       await Promise.all(
@@ -74,7 +78,8 @@ class SnapSyncService {
             snapShapePositionId: userData.snapShapePositionId,
             snapSyncId: createSnapSyncData.id,
             locationId: userData.locationId,
-            snappedAtUtc: userData.snappedAtUtc,
+            snappedAt: userData.snappedAt,
+            s3ImageKey: userData.s3Key,
           });
         }),
       );
@@ -91,11 +96,11 @@ class SnapSyncService {
   public async findImageUrlById(snapSyncId: number): Promise<string> {
     const findOneData = await SnapsSync.query().whereNotDeleted().findById(snapSyncId);
     if (!findOneData) throw new HttpException(404, "SnapSync doesn't exist");
-    if (!findOneData.imageKey) throw new HttpException(400, "SnapSync doesn't have an image");
+    if (!findOneData.s3CollageKey) throw new HttpException(400, "SnapSync doesn't have an image");
 
     let params: GetObjectCommandInput = {
       Bucket: S3_BUCKET_NAME,
-      Key: findOneData.imageKey,
+      Key: findOneData.s3CollageKey,
     };
 
     const command = new GetObjectCommand(params);

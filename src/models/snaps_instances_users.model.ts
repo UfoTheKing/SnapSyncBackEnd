@@ -20,8 +20,9 @@ export class SnapsInstancesUsers extends softDelete(Model) implements SnapInstan
   isJoined!: boolean;
   joinedAt!: Date | null;
 
+  s3Key!: string | null;
   cdlPublicId!: string | null;
-  snappedAtUtc!: Date | null;
+  snappedAt!: Date | null;
 
   createdAt!: Date;
   updatedAt!: Date;
