@@ -1,8 +1,6 @@
-export interface SnapShapeRow {
+export interface NotificationType {
   id: number;
-  snapShapeId: number;
-  row: number;
-
+  name: string;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;

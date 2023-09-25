@@ -1,5 +1,6 @@
 import { HttpException } from '@/exceptions/HttpException';
 import { RequestWithFile, RequestWithUser } from '@/interfaces/auth.interface';
+import BlockedUserService from '@/services/blocked_users.service';
 import UserService from '@/services/users.service';
 import ValidationService from '@/services/validation.service';
 import {
@@ -18,6 +19,7 @@ import * as yup from 'yup';
 class AccountsController {
   public userService = new UserService();
   public validationService = new ValidationService();
+  public blockedUserService = new BlockedUserService();
 
   public getWebFormData = async (req: RequestWithUser, res: Response, next: NextFunction) => {
     try {
@@ -36,6 +38,21 @@ class AccountsController {
     }
   };
 
+  public getSettingsWebInfo = async (req: RequestWithUser, res: Response, next: NextFunction) => {
+    try {
+      let webInfo = {
+        privateAccount: boolean(req.user.isPrivate),
+      };
+
+      res.status(200).json({
+        webInfo: webInfo,
+        message: 'ok',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   public getUsernameRules = async (req: Request, res: Response, next: NextFunction) => {
     try {
       let response = {
@@ -49,6 +66,7 @@ class AccountsController {
       next(error);
     }
   };
+
   public getFullNameRules = async (req: Request, res: Response, next: NextFunction) => {
     try {
       let response = {
@@ -88,6 +106,22 @@ class AccountsController {
       }
 
       res.status(200).json({
+        message: 'ok',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getPrivacyBlockedAccounts = async (req: RequestWithUser, res: Response, next: NextFunction) => {
+    try {
+      const page = Number(req.query.page) && Number(req.query.page) > 0 ? Number(req.query.page) : 1;
+      const count = Number(req.query.count) && Number(req.query.count) > 0 ? Number(req.query.count) : 12;
+
+      const blockedUsers = await this.blockedUserService.findLoggedUserBlockedUsers(req.user.id, page, count);
+
+      res.status(200).json({
+        ...blockedUsers,
         message: 'ok',
       });
     } catch (error) {

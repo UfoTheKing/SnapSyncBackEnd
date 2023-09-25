@@ -20,6 +20,8 @@ export class Friends extends softDelete(Model) implements Friend {
   friendshipStatusId!: number;
   acceptedAt!: Date | null;
   rejectedAt!: Date | null;
+  snapSyncStreak!: number;
+  lastSnapSync!: Date | null;
 
   createdAt!: Date;
   updatedAt!: Date;

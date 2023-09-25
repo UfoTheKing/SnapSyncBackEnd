@@ -47,11 +47,11 @@ class AuthRoute implements Routes {
 
     this.router.post(`${this.path}/phone_number`, this.authController.validatePhoneNumber);
     this.router.post(`${this.path}/otp`, deviceMiddleware, this.authController.validateOtp);
-    this.router.post(`${this.path}/username`, this.authController.validateUsername);
+    // this.router.post(`${this.path}/username`, this.authController.validateUsername);
 
     this.router.post(`${this.path}/resend_otp`, deviceMiddleware, this.authController.resendOtp);
 
-    this.router.post(`${this.path}/signup`, deviceMiddleware, upload.single('avatar'), this.authController.signUp);
+    this.router.post(`${this.path}/signup`, deviceMiddleware, this.authController.signUp);
 
     this.router.post(`${this.path}/login_auth_token`, deviceMiddleware, this.authController.logInWithAuthToken);
 

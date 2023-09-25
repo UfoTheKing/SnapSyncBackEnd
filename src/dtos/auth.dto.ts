@@ -1,5 +1,3 @@
-import { MulterUploadFile } from '@/interfaces/auth.interface';
-
 export class LogInDto {
   usernameOrPhoneNumber: string;
   phoneNumberVerificationCode: string; // Codice di verifica del numero di telefono
@@ -9,7 +7,7 @@ export class LogInDto {
 
 export class SignUpDto {
   sessionId: string;
-  file: MulterUploadFile;
+  username: string;
 
   lt: number | null; // Indica la latitudine del luogo in cui l'utente si è registrato
   lg: number | null; // Indica la longitudine del luogo in cui l'utente si è registrato

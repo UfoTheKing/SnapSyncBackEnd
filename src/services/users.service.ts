@@ -1,6 +1,6 @@
 import { DB_DATABASE, S3_ACCESS_KEY_ID, S3_BUCKET_NAME, S3_BUCKET_REGION, S3_SECRET_ACCESS_KEY } from '@/config';
 import { MulterUploadFile } from '@/interfaces/auth.interface';
-import { Biography, BiographyEntity } from '@/interfaces/user_profile.interface';
+import { Biography, BiographyEntity } from '@/interfaces/project/user_profile.interface';
 import { BlockedUsers } from '@/models/blocked_users.model';
 import { AVATAR_SIZE } from '@/utils/costants';
 import { generateRandomKey } from '@/utils/util';
@@ -20,7 +20,7 @@ import sizeOf from 'image-size';
 import sharp from 'sharp';
 import { boolean } from 'boolean';
 import knex from '@/databases';
-import { UsersContacts } from '@/models/users_contacts.model';
+import FriendService from './friends.service';
 
 const s3 = new S3Client({
   credentials: {
@@ -57,15 +57,27 @@ class UserService {
     return findUser;
   }
 
-  public async findSmallUserById(userId: number, includeSocialContext: boolean = false): Promise<SmallUser> {
+  public async findSmallUserById(
+    userId: number,
+    loggedUserId?: number,
+    includeSocialContext: boolean = false,
+    includeStreak: boolean = false,
+  ): Promise<SmallUser> {
     let findUser: User = await Users.query().whereNotDeleted().findById(userId);
     if (!findUser) throw new HttpException(404, "User doesn't exist");
 
     let profilePictureUrl: string = await this.findUserProfilePictureUrlById(userId);
     let socialContext: string | undefined = undefined;
+    let streak: number | undefined = undefined;
 
     if (includeSocialContext) {
       // Mi faccio tornare il SocialContext
+    }
+
+    if (includeStreak && loggedUserId) {
+      // Controllo se i due utenti sono amici
+      let { areFriends, friend } = await new FriendService().areFriends(loggedUserId, userId);
+      if (areFriends) streak = friend.snapSyncStreak;
     }
 
     let user: SmallUser = {
@@ -76,6 +88,7 @@ class UserService {
       profilePictureUrl: profilePictureUrl,
 
       socialContext: socialContext,
+      streak: streak,
     };
 
     return user;
@@ -205,39 +218,28 @@ class UserService {
     if (!findUser) throw new HttpException(404, "User doesn't exist");
 
     // Faccio l'upload dell'immagine del profilo
-    const originalHeight = sizeOf(data.path).height;
-    const originalWidth = sizeOf(data.path).width;
+    const originalHeight = sizeOf(data.buffer).height;
+    const originalWidth = sizeOf(data.buffer).width;
     if (!originalHeight || !originalWidth) throw new HttpException(400, 'Invalid image');
 
     // Salvo l'immagine nella cartella uploads/avatars
-    const key = `avatars/${generateRandomKey()}`;
+    const key = `avatars/${userId}/${generateRandomKey()}`;
+    let buffer: Buffer = data.buffer;
     if (originalHeight !== AVATAR_SIZE || originalWidth !== AVATAR_SIZE) {
-      const resizedImageWithoutAlpha = await sharp(data.buffer).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
-
-      const params: PutObjectCommandInput = {
-        Bucket: S3_BUCKET_NAME,
-        Key: key,
-        Body: resizedImageWithoutAlpha,
-        ContentType: data.mimetype,
-      };
-
-      const command = new PutObjectCommand(params);
-      const dataS3: PutObjectCommandOutput = await s3.send(command);
-      if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
-        throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
-    } else {
-      const params: PutObjectCommandInput = {
-        Bucket: S3_BUCKET_NAME,
-        Key: key,
-        Body: data.buffer,
-        ContentType: data.mimetype,
-      };
-
-      const command = new PutObjectCommand(params);
-      const dataS3: PutObjectCommandOutput = await s3.send(command);
-      if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
-        throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
+      buffer = await sharp(data.buffer).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
     }
+
+    const params: PutObjectCommandInput = {
+      Bucket: S3_BUCKET_NAME,
+      Key: key,
+      Body: buffer,
+      ContentType: data.mimetype,
+    };
+
+    const command = new PutObjectCommand(params);
+    const dataS3: PutObjectCommandOutput = await s3.send(command);
+    if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
+      throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
 
     // Aggiorno il campo profilePicImageKey
     const updatedUser = await Users.query().whereNotDeleted().patchAndFetchById(userId, {

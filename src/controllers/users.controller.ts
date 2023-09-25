@@ -6,7 +6,7 @@ import { HttpException } from '@/exceptions/HttpException';
 import FriendshipStatusService from '@/services/friendship_status.service';
 import { boolean } from 'boolean';
 import FriendService from '@/services/friends.service';
-import { MutualFriends, UserProfile } from '@/interfaces/user_profile.interface';
+import { MutualFriends, UserProfile } from '@/interfaces/project/user_profile.interface';
 import * as yup from 'yup';
 import { CreateUserContactDto } from '@/dtos/users_contacts.dto';
 import UserContactService from '@/services/users_contacts.service';

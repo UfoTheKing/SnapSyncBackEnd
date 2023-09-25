@@ -1,43 +1,38 @@
 import { Model, ModelObject, Pojo } from 'objection';
 import objectionSoftDelete from 'objection-js-soft-delete';
-import { boolean } from 'boolean';
-import { SnapShapePosition } from '@/interfaces/snaps_shapes_positions.interface';
+import { Location } from '@/interfaces/locations.interface';
+import { NotificationType } from '@/interfaces/notifications_types.interface';
 
-// Specify the options for this plugin. This are the defaults.
 const softDelete = objectionSoftDelete({
   columnName: 'deletedAt',
   deletedValue: new Date(),
   notDeletedValue: null,
 });
 
-export class SnapsShapesPositions extends softDelete(Model) implements SnapShapePosition {
+export class NotificationsTypes extends softDelete(Model) implements NotificationType {
   id!: number;
-  snapShapeId!: number;
   name!: string;
-
-  ownerPosition!: boolean;
-  width!: number;
-  height!: number;
 
   createdAt!: Date;
   updatedAt!: Date;
   deletedAt!: Date | null;
+
   unarchived!: boolean;
 
-  static tableName = 'snaps_shapes_positions';
-  static idColumn = 'id';
+  static tableName = 'notifications_types'; // database table name
+  static idColumn = 'id'; // id column name
 
   $formatJson(json: Pojo): Pojo {
     json = super.$formatJson(json);
 
-    json.ownerPosition = boolean(json.ownerPosition);
-
     delete json.createdAt;
     delete json.updatedAt;
     delete json.deletedAt;
+
     delete json.unarchived;
+
     return json;
   }
 }
 
-export type SnapsShapesPositionsShape = ModelObject<SnapsShapesPositions>;
+export type NotificationsTypesShape = ModelObject<NotificationsTypes>;

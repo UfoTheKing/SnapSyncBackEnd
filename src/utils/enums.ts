@@ -1,12 +1,12 @@
-export enum StoryType {
-  IMAGE = 'image',
-  VIDEO = 'video',
-}
-
 export enum FriendshipStatus {
   Pending = 'Pending',
   Accepted = 'Accepted',
   Rejected = 'Rejected',
+}
+
+export enum NotificationType {
+  FriendRequestReceived = 'FriendRequestReceived',
+  FriendRequestAccepted = 'FriendRequestAccepted',
 }
 
 export enum WssActions {

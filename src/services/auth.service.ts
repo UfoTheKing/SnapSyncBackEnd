@@ -4,9 +4,9 @@ import { HttpException } from '@exceptions/HttpException';
 import { DataStoredInToken, LogInResponse, TokenData } from '@interfaces/auth.interface';
 import { User } from '@interfaces/users.interface';
 import { Users } from '@models/users.model';
-import { generateRandomKey, isEmpty } from '@utils/util';
+import { isEmpty } from '@utils/util';
 import { phone } from 'phone';
-import { AVATAR_SIZE, MIN_AGE } from '@/utils/costants';
+import { MIN_AGE } from '@/utils/costants';
 import { LogInPhoneNumberDto, LogInWithAuthTokenDto, SignUpDto } from '@/dtos/auth.dto';
 import { Device } from '@/interfaces/devices.interface';
 import { UserDevice } from '@/interfaces/users_devices.interface';
@@ -16,22 +16,9 @@ import { UsersDevices } from '@/models/users_devices.model';
 import sha256 from 'crypto-js/sha256';
 import { AuthTokens } from '@/models/auth_tokens.model';
 import { boolean } from 'boolean';
-import { S3Client, PutObjectCommand, PutObjectCommandInput, PutObjectCommandOutput } from '@aws-sdk/client-s3';
-import { S3_ACCESS_KEY_ID, S3_BUCKET_NAME, S3_BUCKET_REGION, S3_SECRET_ACCESS_KEY } from '@/config';
 import { ExpoPushTokens } from '@/models/expo_push_tokens.model';
 import UserService from './users.service';
 import { AuthUsers } from '@/models/auth_users.model';
-import sizeOf from 'image-size';
-import sharp from 'sharp';
-import TwilioService from './twilio.service';
-
-const s3 = new S3Client({
-  credentials: {
-    accessKeyId: S3_ACCESS_KEY_ID,
-    secretAccessKey: S3_SECRET_ACCESS_KEY,
-  },
-  region: S3_BUCKET_REGION,
-});
 
 class AuthService {
   public validateDateOfBirth = async (yearOfBirth: number, monthOfBirth: number, dayOfBirth: number): Promise<boolean> => {
@@ -201,10 +188,10 @@ class AuthService {
     if (!authUser.dateOfBirth) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
     if (!authUser.phoneNumber) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
     if (!boolean(authUser.isPhoneNumberVerified)) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
-    if (!authUser.username) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
+    // if (!authUser.username) throw new HttpException(400, "Ops! You cant't sign up. Please try again later");
 
     // Controllo se l'utente esiste già con lo stesso username
-    const findUserByUsername = await Users.query().whereNotDeleted().where('username', authUser.username.toLocaleLowerCase().trim()).first();
+    const findUserByUsername = await Users.query().whereNotDeleted().where('username', data.username.toLocaleLowerCase().trim()).first();
     if (findUserByUsername) throw new HttpException(409, 'Username already exists');
 
     // Controllo se l'utente esiste già con lo stesso numero di telefono
@@ -216,40 +203,41 @@ class AuthService {
     if (!phoneResults.isValid) throw new HttpException(422, 'Phone number is not valid');
 
     // Faccio l'upload dell'immagine del profilo
-    const originalHeight = sizeOf(data.file.buffer).height;
-    const originalWidth = sizeOf(data.file.buffer).width;
-    if (!originalHeight || !originalWidth) throw new HttpException(400, 'Invalid image');
+    // const originalHeight = sizeOf(data.file.buffer).height;
+    // const originalWidth = sizeOf(data.file.buffer).width;
+    // if (!originalHeight || !originalWidth) throw new HttpException(400, 'Invalid image');
 
-    // Salvo l'immagine nella cartella uploads/avatars
-    const key = `avatars/${generateRandomKey()}`;
+    // Come immagine iniziale sarà usata quella di default
+    let firstUsernameChar = data.username.charAt(0);
+    const key = `letters/${firstUsernameChar.toUpperCase()}.jpeg`;
 
-    if (originalHeight !== AVATAR_SIZE || originalWidth !== AVATAR_SIZE) {
-      const resizedImageWithoutAlpha = await sharp(data.file.buffer).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
+    // if (originalHeight !== AVATAR_SIZE || originalWidth !== AVATAR_SIZE) {
+    //   const resizedImageWithoutAlpha = await sharp(data.file.buffer).resize(AVATAR_SIZE, AVATAR_SIZE).withMetadata().toBuffer();
 
-      const params: PutObjectCommandInput = {
-        Bucket: S3_BUCKET_NAME,
-        Key: key,
-        Body: resizedImageWithoutAlpha,
-        ContentType: data.file.mimetype,
-      };
+    //   const params: PutObjectCommandInput = {
+    //     Bucket: S3_BUCKET_NAME,
+    //     Key: key,
+    //     Body: resizedImageWithoutAlpha,
+    //     ContentType: data.file.mimetype,
+    //   };
 
-      const command = new PutObjectCommand(params);
-      const dataS3: PutObjectCommandOutput = await s3.send(command);
-      if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
-        throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
-    } else {
-      const params: PutObjectCommandInput = {
-        Bucket: S3_BUCKET_NAME,
-        Key: key,
-        Body: data.file.buffer,
-        ContentType: data.file.mimetype,
-      };
+    //   const command = new PutObjectCommand(params);
+    //   const dataS3: PutObjectCommandOutput = await s3.send(command);
+    //   if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
+    //     throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
+    // } else {
+    //   const params: PutObjectCommandInput = {
+    //     Bucket: S3_BUCKET_NAME,
+    //     Key: key,
+    //     Body: data.file.buffer,
+    //     ContentType: data.file.mimetype,
+    //   };
 
-      const command = new PutObjectCommand(params);
-      const dataS3: PutObjectCommandOutput = await s3.send(command);
-      if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
-        throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
-    }
+    //   const command = new PutObjectCommand(params);
+    //   const dataS3: PutObjectCommandOutput = await s3.send(command);
+    //   if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
+    //     throw new HttpException(500, 'Ops! Something went wrong. Please try again later.');
+    // }
 
     var createdUser: User;
     var createdUserDevice: UserDevice;
@@ -261,7 +249,7 @@ class AuthService {
     let phoneNumberOnlyDigits = authUser.phoneNumber.replace(/\D/g, ''); // Rimuovo tutti i caratteri non numerici
     try {
       createdUser = await Users.query(trx).insert({
-        username: authUser.username.toLocaleLowerCase().trim(),
+        username: data.username.toLocaleLowerCase().trim(),
         phoneNumber: authUser.phoneNumber,
         phoneNumberOnlyDigits: phoneNumberOnlyDigits,
         phoneNumberCountryIso2: phoneResults.countryIso2,

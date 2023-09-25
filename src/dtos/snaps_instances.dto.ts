@@ -5,3 +5,7 @@ export class TakeSnapDto {
   snapInstanceId: number;
   file: MulterUploadFile;
 }
+
+export class CreateSnapInstanceDto {
+  userId: number;
+}

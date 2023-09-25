@@ -1,33 +1,16 @@
-import { TakeSnapDto } from '@/dtos/snaps_instances.dto';
+import { CreateSnapInstanceDto } from '@/dtos/snaps_instances.dto';
 import { HttpException } from '@/exceptions/HttpException';
 import { SnapInstance } from '@/interfaces/snaps_instances.interface';
 import { SnapsInstances } from '@/models/snaps_instances.model';
 import { SnapsInstancesUsers } from '@/models/snaps_instances_users.model';
 import { Users } from '@/models/users.model';
 import { isEmpty } from '@/utils/util';
-import { boolean } from 'boolean';
-import {
-  CLOUDINARY_API_KEY,
-  CLOUDINARY_API_SECRET,
-  CLOUDINARY_CLOUD_NAME,
-  S3_ACCESS_KEY_ID,
-  S3_BUCKET_NAME,
-  S3_BUCKET_REGION,
-  S3_SECRET_ACCESS_KEY,
-} from '@/config';
+import { S3_ACCESS_KEY_ID, S3_BUCKET_NAME, S3_BUCKET_REGION, S3_SECRET_ACCESS_KEY } from '@/config';
 import { PutObjectCommand, PutObjectCommandInput, PutObjectCommandOutput, S3Client } from '@aws-sdk/client-s3';
 import { ApiCodes } from '@/utils/apiCodes';
-import { SnapsShapes } from '@/models/snaps_shapes.model';
-import { SnapsShapesPositions } from '@/models/snaps_shapes_positions.model';
-import { v2 as cloudinary } from 'cloudinary';
-import { MulterUploadFile } from '@/interfaces/auth.interface';
-import streamifier from 'streamifier';
-import sizeOf from 'image-size';
-import fetch from 'cross-fetch';
-import sharp from 'sharp';
-import { SnapShape } from '@/interfaces/snaps_shapes.interface';
-import SnapShapeService from './snaps_shapes.service';
-import fs from 'fs';
+import FriendService from './friends.service';
+import { CreateSnapInstanceUserDto } from '@/dtos/snaps_instances_users.dto';
+import sha256 from 'crypto-js/sha256';
 
 const s3 = new S3Client({
   credentials: {
@@ -35,12 +18,6 @@ const s3 = new S3Client({
     secretAccessKey: S3_SECRET_ACCESS_KEY,
   },
   region: S3_BUCKET_REGION,
-});
-
-cloudinary.config({
-  cloud_name: CLOUDINARY_CLOUD_NAME,
-  api_key: CLOUDINARY_API_KEY,
-  api_secret: CLOUDINARY_API_SECRET,
 });
 
 class SnapInstanceService {
@@ -58,144 +35,60 @@ class SnapInstanceService {
     return findOne;
   }
 
-  public async checkSnapInstance(snapInstanceId: number, userId: number): Promise<void> {
-    const findSnapInstance = await SnapsInstances.query().whereNotDeleted().findById(snapInstanceId);
-    if (!findSnapInstance) throw new HttpException(404, "SnapSync doesn't exist");
-
-    const findUser = await Users.query().whereNotDeleted().findById(userId);
-    if (!findUser) throw new HttpException(404, "User doesn't exist");
-
-    // Controllo se esiste uno SnapInstanceUser con questo userId e questo snapInstanceId
-    const findSnapInstanceUser = await SnapsInstancesUsers.query().whereNotDeleted().findOne({ userId: userId, snapInstanceId: snapInstanceId });
-    if (!findSnapInstanceUser) throw new HttpException(403, "You can't join this SnapSync");
-
-    if (boolean(findSnapInstanceUser.isJoined)) throw new HttpException(403, 'You have already joined this SnapSync');
-    if (findSnapInstanceUser.snappedAt) throw new HttpException(403, 'You have already taken a snap of this SnapSync');
-  }
-
-  public async takeSnap(data: TakeSnapDto): Promise<boolean> {
+  public async createSnapInstance(data: CreateSnapInstanceDto, snapSyncUsersData: CreateSnapInstanceUserDto[]): Promise<SnapInstance> {
     if (isEmpty(data)) throw new HttpException(400, 'Ops! Data is empty');
-    if (!data.file) throw new HttpException(400, 'No snap file provided!');
-    if (!data.file.buffer) throw new HttpException(400, 'No snap file provided!');
+    if (isEmpty(snapSyncUsersData)) throw new HttpException(400, 'Ops! Data is empty');
+
+    const key = sha256(new Date().getTime().toString()).toString();
 
     const findUser = await Users.query().whereNotDeleted().findById(data.userId);
     if (!findUser) throw new HttpException(404, "User doesn't exist");
 
-    const findSnapInstance = await SnapsInstances.query().whereNotDeleted().findById(data.snapInstanceId);
-    if (!findSnapInstance) throw new HttpException(404, "SnapSync doesn't exist");
+    const ownerSnapSyncUser = snapSyncUsersData.find(snapSyncUser => snapSyncUser.isOwner);
+    if (!ownerSnapSyncUser) throw new HttpException(400, 'Ops! Data is empty');
+    if (ownerSnapSyncUser.userId !== data.userId) throw new HttpException(400, 'Ops! Owner must be the same of userId');
 
-    // Controllo se esiste uno SnapInstanceUser con questo userId e questo snapInstanceId
-    const findSnapInstanceUser = await SnapsInstancesUsers.query()
-      .whereNotDeleted()
-      .findOne({ userId: data.userId, snapInstanceId: data.snapInstanceId });
-    if (!findSnapInstanceUser) throw new HttpException(403, "You can't take a snap of this SnapSync");
+    // Controllo se snapSyncUsersData ha 2 elementi
+    if (snapSyncUsersData.length < 2) throw new HttpException(400, 'Ops! You must provide at least 2 users');
 
-    // Controllo se l'utente ha già fatto uno snap di questo SnapInstance
-    if (findSnapInstanceUser.snappedAt) {
-      throw new HttpException(403, 'You have already taken a snap of this SnapSync');
-    }
+    // Controllo che i due utenti non siano uguali
+    const userIds = snapSyncUsersData.map(snapSyncUser => snapSyncUser.userId);
+    const uniqueUserIds = [...new Set(userIds)];
+    if (userIds.length !== uniqueUserIds.length) throw new HttpException(400, 'Ops! You must provide at least 2 different users');
 
-    // Controllo se effettivamente snapInstance.timerStarted è true
-    if (!boolean(findSnapInstance.timerStarted)) {
-      throw new HttpException(403, "Timer of this SnapSync hasn't started yet");
-    }
+    // Controllo che i due utenti esistano
+    const findUsers = await Users.query().whereNotDeleted().findByIds(userIds);
+    if (findUsers.length !== userIds.length) throw new HttpException(404, "One or more users don't exist");
 
-    // Controllo se findSnapInstance.timerStartAt non è null e se è passato il tempo dei snapInstance.timerDurationSeconds, se si allora posso fare lo snap
-    if (findSnapInstance.timerStartAt) {
-      const now = new Date();
-      const timerStartAt = new Date(findSnapInstance.timerStartAt);
-      const timerDurationSeconds = findSnapInstance.timerDurationSeconds;
-      const timerEndAt = new Date(timerStartAt.getTime() + timerDurationSeconds * 1000);
+    // Controllo che i due utenti siano amici
+    const { areFriends } = await new FriendService().areFriends(userIds[0], userIds[1]);
+    if (!areFriends) throw new HttpException(400, 'Ops! You must provide 2 friends');
 
-      if (now.getTime() < timerEndAt.getTime()) {
-        throw new HttpException(400, 'Ops! You can take a snap only after the timer has expired');
-      }
-    } else {
-      throw new HttpException(403, "Timer of this SnapSync hasn't started yet");
-    }
-
-    const shape = await SnapsShapes.query().whereNotDeleted().findById(findSnapInstance.snapShapeId);
-    if (!shape) throw new HttpException(404, "SnapSync shape doesn't exist", null, ApiCodes.DeleteSnap);
-
-    // Controllo se tutti gli utenti hanno joinato lo SnapInstance, se no allora non posso fare lo snap
-    const countJoinedUsers = await SnapsInstancesUsers.query()
-      .whereNotDeleted()
-      .where({ snapInstanceId: findSnapInstance.id, isJoined: true })
-      .resultSize();
-    if (countJoinedUsers !== shape.numberOfUsers) throw new HttpException(400, 'Ops! You can take a snap only after all users have joined');
-
-    // Recupero la posizione dell'utente
-    const findSnapInstanceUserPosition = await SnapsShapesPositions.query().whereNotDeleted().findById(findSnapInstanceUser.snapShapePositionId);
-    if (!findSnapInstanceUserPosition) throw new HttpException(404, "SnapSync position doesn't exist", null, ApiCodes.DeleteSnap);
-
-    const originalWidth = sizeOf(data.file.buffer).width;
-    const originalHeight = sizeOf(data.file.buffer).height;
-    if (!originalWidth || !originalHeight) throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-    let buffer: Buffer = data.file.buffer;
-    if (originalHeight !== findSnapInstanceUserPosition.height || originalWidth !== findSnapInstanceUserPosition.width) {
-      console.log('RESIZE', findSnapInstanceUserPosition.width, findSnapInstanceUserPosition.height);
-      // Faccio il resize dell'immagine in base alla shapePosition
-      buffer = await sharp(data.file.buffer)
-        .resize(findSnapInstanceUserPosition.width, findSnapInstanceUserPosition.height)
-        .withMetadata()
-        .toBuffer();
-
-      // Salvo il file nella cartella temporanea
-      // fs.writeFileSync(`../uploads/snaps_sync/${findSnapInstance.id}_${findUser.id}_${Date.now()}.jpg`, buffer);
-    }
-
-    // Salvo lo snap su S3 + Cloudinary
-    const s3BucketKey = `snaps/${findSnapInstance.id}/${findSnapInstanceUserPosition.name}_${findUser.id}_${Date.now()}`;
-    const cdlFolder = `snaps/${findSnapInstance.id}`;
-    const cdlPublicId = `${findSnapInstanceUserPosition.name}_${findUser.id}_${Date.now()}`;
-    const publicId = `${cdlFolder}/${cdlPublicId}`;
-    try {
-      await this.uploadSnapBufferToS3(buffer, s3BucketKey, data.file.mimetype);
-      await this.uploadSnapBufferToCloudinary(buffer, cdlFolder, cdlPublicId);
-
-      await SnapsInstancesUsers.query()
-        .whereNotDeleted()
-        .patch({ s3Key: s3BucketKey, cdlPublicId: publicId, snappedAt: new Date() })
-        .findById(findSnapInstanceUser.id);
-    } catch (error) {
-      throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-    }
+    // TODO: Controllo che i due utenti non abbiano già uno SnapInstance in corso
 
     const trx = await SnapsInstances.startTransaction();
 
-    let areAllSnapped = false;
-
-    // Aggiorno lo SnapInstanceUser con l'imageKey ed eventualmente controllo se tutti gli utenti hanno fatto uno snap
-    // Se questo blocco di codice fallisce, allora faccio il rollback della transazione e tramite il WebSocket mando a tutti gli utenti
-    // che lo snap non è andato a buon fine
     try {
-      const snapInstanceUsers = await SnapsInstancesUsers.query()
-        .whereNotDeleted()
-        .where({ snapInstanceId: findSnapInstance.id })
-        .whereNotNull('snappedAt');
+      const snapInstance = await SnapsInstances.query(trx).insertAndFetch({
+        userId: data.userId,
+        instanceKey: key,
+      });
 
-      if (snapInstanceUsers.length === shape.numberOfUsers) {
-        areAllSnapped = true;
-        // Se tutti gli utenti hanno fatto uno snap, genero il collage e lo salvo su s3
-        let media: string[] = snapInstanceUsers.map(snapInstanceUser => snapInstanceUser.cdlPublicId);
-        const collagePublicId = `COLLAGE_${findSnapInstance.id}_${Date.now()}`;
-        await this.generateCollage(media, collagePublicId, shape);
+      // Sistemo i dati di snapSyncUsersData
+      snapSyncUsersData.forEach(snapSyncUser => {
+        snapSyncUser.snapInstanceId = snapInstance.id;
+      });
 
-        // image = `https://res.cloudinary.com/dmwabqjto/image/upload/snaps_collage/${collagePublicId}`;
-
-        // // TODO: Salvo il colage generato nella SnapInstance -> questo sarebbe da fare nel Webhook di Cloudinary
-        // await SnapsInstances.query(trx)
-        //   .whereNotDeleted()
-        //   .patch({ cdlPublicId: collagePublicId, cdlPublicUrl: image, collageCreatedAt: new Date() })
-        //   .findById(findSnapInstance.id);
-      }
+      // Creo gli SnapInstanceUsers
+      await SnapsInstancesUsers.query(trx).insertGraph(snapSyncUsersData);
 
       await trx.commit();
-    } catch (error) {
-      throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-    }
 
-    return areAllSnapped;
+      return snapInstance;
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
   }
 
   private async uploadSnapBufferToS3(buffer: Buffer, s3BucketKey: string, ContentType: string): Promise<void> {
@@ -210,63 +103,6 @@ class SnapInstanceService {
     const dataS3: PutObjectCommandOutput = await s3.send(command);
     if (!dataS3.$metadata.httpStatusCode || dataS3.$metadata.httpStatusCode !== 200)
       throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-  }
-
-  private async uploadSnapBufferToCloudinary(buffer: Buffer, folder: string, publicId: string): Promise<void> {
-    // Salvo il file anche su Cloudinary, per poterlo usare per il collage
-    let cld_upload_stream = await cloudinary.uploader.upload_stream({ folder: folder, public_id: publicId }, function (error, result) {
-      if (error) throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-    });
-
-    await streamifier.createReadStream(buffer).pipe(cld_upload_stream);
-  }
-
-  private async generateCollage(media: string[], publicId: string, shape: SnapShape): Promise<void> {
-    // TODO: Genero il collage e lo salvo su S3
-    const grid = await new SnapShapeService().findSnapShapeNumberGridById(shape.id, false);
-
-    let assest: Array<{ media: string }> = media.map(media => {
-      return {
-        media: media,
-      };
-    });
-    var manifest_json = {
-      template: grid,
-      width: shape.width,
-      height: shape.height,
-      columns: shape.columns,
-      rows: shape.rows,
-      spacing: shape.spacing,
-      color: '#fff',
-      assetDefaults: { kind: 'upload', crop: 'fill', gravity: 'center' },
-      assets: assest,
-    };
-    let body = {
-      api_key: CLOUDINARY_API_KEY,
-      public_id: publicId,
-      resource_type: 'image',
-      upload_preset: 'snapsync',
-      manifest_json: JSON.stringify(manifest_json),
-    };
-
-    const cdlEndpoint = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/create_collage`;
-    try {
-      const response = await fetch(cdlEndpoint, {
-        method: 'POST',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!response.ok) {
-        console.log(JSON.stringify(response));
-        throw new HttpException(response.status, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-      }
-
-      const data = await response.json();
-      console.log(JSON.stringify(data));
-    } catch (error) {
-      console.log(JSON.stringify(error));
-      throw new HttpException(500, 'Ops! Something went wrong.', null, ApiCodes.DeleteSnap);
-    }
   }
 }
 

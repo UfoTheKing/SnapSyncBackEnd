@@ -6,17 +6,13 @@ export async function up(knex: Knex): Promise<void> {
     table.bigIncrements('id').unsigned().primary();
 
     table.bigInteger('userId').unsigned().index().references('id').inTable('users').onDelete('CASCADE').notNullable().comment('User ID'); // Colui che ha creato lo snap
-    table.bigInteger('snapShapeId').unsigned().index().references('id').inTable('snaps_shapes').onDelete('CASCADE').notNullable();
 
     table.string('instanceKey', 64).notNullable().comment('Key SHA256');
     table.boolean('timerStarted').defaultTo(false);
-    table.integer('timerDurationMinutes').defaultTo(0);
-    table.integer('timerDurationSeconds').defaultTo(10);
+    table.integer('timerSeconds').defaultTo(10);
     table.timestamp('timerStartAt').nullable();
 
-    table.string('cdlPublicId').nullable();
-    table.string('cdlPublicUrl').nullable();
-    table.timestamp('collageCreatedAt').nullable();
+    table.integer('timerPublishSeconds').defaultTo(20);
 
     table.timestamp('createdAt').defaultTo(knex.fn.now());
     table.timestamp('updatedAt').defaultTo(knex.fn.now());
@@ -27,6 +23,7 @@ export async function up(knex: Knex): Promise<void> {
     ALTER TABLE snaps_instances
     ADD COLUMN unarchived BOOLEAN GENERATED ALWAYS AS (IF(deletedAt IS NULL, 1, NULL)) VIRTUAL
 `);
+
   // UNIQUE KEY (instanceKey, unarchived)
   await knex.schema.raw(`
     CREATE UNIQUE INDEX si_instanceKey_unarchived_uindex

@@ -1,4 +1,4 @@
-import { SmallUser } from './users.interface';
+import { SmallUser } from '../users.interface';
 
 export interface MutualFriends {
   count: number;

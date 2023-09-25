@@ -41,4 +41,5 @@ export interface SmallUser {
   profilePictureUrl: string;
 
   socialContext?: string;
+  streak?: number;
 }

@@ -7,6 +7,7 @@ import BlockedUserService from '@/services/blocked_users.service';
 import FriendService from '@/services/friends.service';
 import FriendshipStatusService from '@/services/friendship_status.service';
 import UserService from '@/services/users.service';
+import { boolean, isBooleanable } from 'boolean';
 import { NextFunction, Response } from 'express';
 import * as yup from 'yup';
 
@@ -22,7 +23,9 @@ class FriendshipsController {
       const count = Number(req.query.count) && Number(req.query.count) > 0 ? Number(req.query.count) : 12;
       const query = (req.query.query && String(req.query.query).trim()) || null;
 
-      const friends = await this.friendService.findLoggedUserFriends(req.user.id, page, count, query);
+      const includeStreak = req.query.include_streak && isBooleanable(req.query.include_streak) ? boolean(req.query.include_streak) : false;
+
+      const friends = await this.friendService.findLoggedUserFriends(req.user.id, page, count, query, includeStreak);
 
       res.status(200).json({
         ...friends,

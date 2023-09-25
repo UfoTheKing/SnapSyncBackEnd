@@ -13,6 +13,7 @@ import { WebServiceClient } from '@maxmind/geoip2-node';
 import { MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } from '@/config';
 import * as ip from 'ip';
 import TwilioService from '@/services/twilio.service';
+import { MAX_USERNAME_LENGTH, MIN_USERNAME_LENGTH, REGEX_USERNAME } from '@/utils/validation';
 
 class AuthController {
   public authService = new AuthService();
@@ -264,9 +265,15 @@ class AuthController {
     }
   };
 
-  public signUp = async (req: RequestWithDevice & RequestWithFile, res: Response, next: NextFunction): Promise<void> => {
+  public signUp = async (req: RequestWithDevice, res: Response, next: NextFunction): Promise<void> => {
     const validationSchema = yup.object().shape({
       sessionId: yup.string().required(),
+      username: yup
+        .string()
+        .required()
+        .min(MIN_USERNAME_LENGTH)
+        .max(MAX_USERNAME_LENGTH)
+        .matches(REGEX_USERNAME, 'Username must contain only letters, numbers and underscores'),
     });
 
     try {
@@ -274,13 +281,12 @@ class AuthController {
 
       await validationSchema.validate(data, { abortEarly: false });
 
-      if (!req.file) throw new HttpException(400, 'Missing avatar');
-      if (!req.file.buffer) throw new HttpException(400, 'Missing avatar');
-
-      data.file = req.file;
-
       const findSession = await this.authUsersService.findAuthUserBySessionId(data.sessionId);
       if (!findSession) throw new HttpException(404, 'Session not found');
+
+      // Convalido lo username
+      data.username = data.username.toLocaleLowerCase().trim();
+      await this.authService.validateUsername(data.username.toLocaleLowerCase().trim());
 
       if (ip.isPrivate(req.ip)) {
         // IP PRIVATO -> Prendo le coordinate del paese di Casalmaggiore

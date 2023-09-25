@@ -8,8 +8,53 @@ import Objection from 'objection';
 import FriendshipStatusService from './friendship_status.service';
 import { Friends } from '@/models/friends.model';
 import FriendService from './friends.service';
+import { SmallUser } from '@/interfaces/users.interface';
+import UserService from './users.service';
 
 class BlockedUserService {
+  public findLoggedUserBlockedUsers = async (
+    loggedUserId: number,
+    page: number = 1,
+    count: number = 12,
+  ): Promise<{
+    users: Array<SmallUser>;
+    pagination: {
+      page: number;
+      size: number;
+      total: number;
+      hasMore: boolean;
+    };
+  }> => {
+    const findLoggedUser = await Users.query().whereNotDeleted().findById(loggedUserId);
+    if (!findLoggedUser) throw new HttpException(404, 'User not found');
+
+    const blockedUsers = await BlockedUsers.query()
+      .whereNotDeleted()
+      .where('userId', findLoggedUser.id)
+      .page(page - 1, count);
+
+    let users: Array<SmallUser> = [];
+
+    for (let i = 0; i < blockedUsers.results.length; i++) {
+      try {
+        let sUser = await new UserService().findSmallUserById(blockedUsers.results[i].blockedUserId);
+        users.push(sUser);
+      } catch (error) {
+        // Non faccio nulla
+      }
+    }
+
+    return {
+      users: users,
+      pagination: {
+        page: page,
+        size: count,
+        total: blockedUsers.total,
+        hasMore: page * count < blockedUsers.total,
+      },
+    };
+  };
+
   public async createBlockedUser(data: CreateBlockedUserDto): Promise<BlockedUser> {
     if (isEmpty(data)) throw new HttpException(400, 'Ops! Data is empty');
 

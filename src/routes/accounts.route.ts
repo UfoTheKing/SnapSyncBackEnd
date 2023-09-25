@@ -39,9 +39,13 @@ class AccountsRoute implements Routes {
   private initializeRoutes() {
     this.router.get(`${this.path}/edit/web_form_data`, authMiddleware, this.accountsController.getWebFormData);
 
+    this.router.get(`${this.path}/settings/web_info`, authMiddleware, this.accountsController.getSettingsWebInfo);
+
     this.router.get(`${this.path}/username/rules`, this.accountsController.getUsernameRules);
     this.router.get(`${this.path}/full_name/rules`, this.accountsController.getFullNameRules);
     this.router.get(`${this.path}/bio/rules`, this.accountsController.getBioRules);
+
+    this.router.get(`${this.path}/settings/privacy/blocked_accounts`, authMiddleware, this.accountsController.getPrivacyBlockedAccounts);
 
     this.router.post(`${this.path}/web_change_profile_pic`, authMiddleware, upload.single('avatar'), this.accountsController.webChangeProfilePicture); // multipart/form-data; boundary=----WebKitFormBoundaryPd3Dn3B16c0lSBzt
 

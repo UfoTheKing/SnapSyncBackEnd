@@ -8,6 +8,9 @@ export interface Friend {
   friendshipStatusId: number;
   acceptedAt: Date | null;
   rejectedAt: Date | null;
+  snapSyncStreak: number;
+  lastSnapSync: Date | null;
+
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;

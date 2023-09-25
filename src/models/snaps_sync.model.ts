@@ -12,11 +12,7 @@ const softDelete = objectionSoftDelete({
 export class SnapsSync extends softDelete(Model) implements SnapSync {
   id!: number;
   userId!: number;
-  snapShapeId!: number;
   snapInstanceId!: number;
-
-  s3CollageKey!: string;
-  blurHash!: string;
 
   createdAt!: Date;
   updatedAt!: Date;

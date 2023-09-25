@@ -13,7 +13,6 @@ export class SnapsInstancesUsers extends softDelete(Model) implements SnapInstan
   id!: number;
   userId!: number;
   snapInstanceId!: number;
-  snapShapePositionId!: number;
   locationId!: number | null;
 
   isOwner!: boolean;
@@ -21,7 +20,6 @@ export class SnapsInstancesUsers extends softDelete(Model) implements SnapInstan
   joinedAt!: Date | null;
 
   s3Key!: string | null;
-  cdlPublicId!: string | null;
   snappedAt!: Date | null;
 
   createdAt!: Date;

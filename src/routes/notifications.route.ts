@@ -14,6 +14,8 @@ class NotificationsRoute implements Routes {
   }
 
   private initializeRoutes() {
+    this.router.get(`${this.path}/badge`, authMiddleware, this.notificationsController.getNotificationsBadge);
+
     this.router.post(`${this.path}/expo-push-token`, authMiddleware, deviceMiddleware, this.notificationsController.createExpoPushToken);
   }
 }

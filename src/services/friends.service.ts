@@ -5,11 +5,13 @@ import { Friend } from '@/interfaces/friends.interface';
 import { Friends } from '@/models/friends.model';
 import { FriendshipStatuses } from '@/models/friendship_statuses.model';
 import { Users } from '@/models/users.model';
-import { FriendshipStatus } from '@/utils/enums';
+import { FriendshipStatus, NotificationType } from '@/utils/enums';
 import { isEmpty } from '@/utils/util';
 import knex from '@databases';
 import UserService from './users.service';
 import { SmallUser, User } from '@/interfaces/users.interface';
+import { Notifications } from '@/models/notifications.model';
+import { NotificationsTypes } from '@/models/notifications_types.model';
 
 class FriendService {
   public findLoggedUserFriends = async (
@@ -17,6 +19,7 @@ class FriendService {
     page: number = 1,
     count: number = 12,
     query: string | null = null,
+    includeStreak: boolean = false,
   ): Promise<{
     friends: Array<SmallUser>;
     pagination: {
@@ -52,7 +55,7 @@ class FriendService {
 
     if (responseResults.length > 0) {
       for (let i = 0; i < responseResults.length; i++) {
-        let us = await new UserService().findSmallUserById(responseResults[i].userId);
+        let us = await new UserService().findSmallUserById(responseResults[i].userId, loggedUserId, false, includeStreak);
         friends.push(us);
       }
     }
@@ -280,13 +283,36 @@ class FriendService {
       .first();
     if (!pendingFriendshipStatus) throw new HttpException(404, 'Friendship status not found');
 
-    const newFriendship = await Friends.query().insert({
-      userId: findUser.id,
-      friendId: findFriend.id,
-      friendshipStatusId: pendingFriendshipStatus.id,
-    });
+    const friendRequestReceived = await NotificationsTypes.query()
+      .whereNotDeleted()
+      .where({
+        name: NotificationType.FriendRequestReceived,
+      })
+      .first();
+    if (!friendRequestReceived) throw new HttpException(404, 'Notification type not found');
 
-    return newFriendship;
+    const trx = await Friends.startTransaction();
+    try {
+      const newFriendship = await Friends.query(trx).insert({
+        userId: findUser.id,
+        friendId: findFriend.id,
+        friendshipStatusId: pendingFriendshipStatus.id,
+      });
+
+      // Creo la notifica
+      await Notifications.query(trx).insert({
+        userId: findFriend.id,
+        notificationTypeId: friendRequestReceived.id,
+        friendId: newFriendship.id,
+      });
+
+      await trx.commit();
+
+      return newFriendship;
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
   };
 
   public acceptFriendship = async (data: AcceptPendingFriendDto): Promise<Friend> => {
@@ -338,15 +364,54 @@ class FriendService {
       throw new HttpException(409, 'You have not received a friend request');
     }
 
-    const updatedFriendship = await Friends.query().patchAndFetchById(findFriendship.id, {
-      friendshipStatusId: acceptedFriendshipStatus.id,
+    const friendRequestAccepted = await NotificationsTypes.query()
+      .whereNotDeleted()
+      .where({
+        name: NotificationType.FriendRequestAccepted,
+      })
+      .first();
+    if (!friendRequestAccepted) throw new HttpException(404, 'Notification type not found');
 
-      acceptedAt: new Date(),
+    const friendRequestReceived = await NotificationsTypes.query()
+      .whereNotDeleted()
+      .where({
+        name: NotificationType.FriendRequestReceived,
+      })
+      .first();
+    if (!friendRequestReceived) throw new HttpException(404, 'Notification type not found');
 
-      updatedAt: new Date(),
-    });
+    const trx = await Friends.startTransaction();
 
-    return updatedFriendship;
+    try {
+      const updatedFriendship = await Friends.query(trx).patchAndFetchById(findFriendship.id, {
+        friendshipStatusId: acceptedFriendshipStatus.id,
+
+        acceptedAt: new Date(),
+
+        updatedAt: new Date(),
+      });
+
+      // Elimino la vecchia notifica
+      await Notifications.query(trx).delete().where({
+        userId: findFriend.id,
+        notificationTypeId: friendRequestReceived.id,
+        friendId: findFriendship.id,
+      });
+
+      // Creo la notifica
+      await Notifications.query(trx).insert({
+        userId: findUser.id,
+        notificationTypeId: friendRequestAccepted.id,
+        friendId: updatedFriendship.id,
+      });
+
+      await trx.commit();
+
+      return updatedFriendship;
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
   };
 
   public denyFriendship = async (data: DenyPendingFriendDto): Promise<void> => {
@@ -436,6 +501,43 @@ class FriendService {
 
     await Friends.query().deleteById(findFriendship.id);
   };
+
+  public async areFriends(
+    userId: number,
+    friendId: number,
+  ): Promise<{
+    friend: Friend | null;
+    areFriends: boolean;
+  }> {
+    let friendshipHash = await this.generateFriendshipHash(userId, friendId);
+    let friendshipAcceptedStatus = await FriendshipStatuses.query()
+      .whereNotDeleted()
+      .where({
+        name: FriendshipStatus.Accepted,
+      })
+      .first();
+    if (!friendshipAcceptedStatus) throw new HttpException(404, 'Friendship status not found');
+
+    const findFriendship = await Friends.query()
+      .whereNotDeleted()
+      .where({
+        friendshipHash: friendshipHash,
+        friendshipStatusId: friendshipAcceptedStatus.id,
+      })
+      .first();
+
+    if (findFriendship) {
+      return {
+        friend: findFriendship,
+        areFriends: true,
+      };
+    }
+
+    return {
+      friend: null,
+      areFriends: false,
+    };
+  }
 
   public generateFriendshipHash = (userId: number, friendId: number): string => {
     let lowestUserId = userId < friendId ? userId : friendId;

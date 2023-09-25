@@ -29,7 +29,8 @@ class ExpoService {
       messages.push({
         to: pushToken,
         sound: 'default',
-        title: `${owner.username} wants to sync snaps with you!`,
+        title: 'SnapSync Request',
+        body: `${owner.username} wants to sync snaps with you!`,
         data: { key: key, type: 'JOIN_SNAP' },
       });
     }
@@ -43,14 +44,13 @@ class ExpoService {
       for (let chunk of chunks) {
         try {
           let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-          console.log(ticketChunk[0]);
+          console.log(ticketChunk);
           tickets.push(...ticketChunk);
           // NOTE: If a ticket contains an error code in ticket.details.error, you
           // must handle it appropriately. The error codes are listed in the Expo
           // documentation:
           // https://docs.expo.io/push-notifications/sending-notifications/#individual-errors
         } catch (error) {
-          // DeviceNotRegistered -> rimuovo l'expo_push_tokens
           console.error(error);
         }
       }
