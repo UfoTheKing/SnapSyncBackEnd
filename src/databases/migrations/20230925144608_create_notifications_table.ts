@@ -9,6 +9,7 @@ export async function up(knex: Knex): Promise<void> {
     table.bigInteger('notificationTypeId').unsigned().index().references('id').inTable('notifications_types').onDelete('CASCADE').notNullable();
 
     table.bigInteger('friendId').unsigned().index().references('id').inTable('friends').onDelete('CASCADE').nullable().defaultTo(null);
+    table.bigInteger('snapSyncId').unsigned().index().references('id').inTable('snaps_sync').onDelete('CASCADE').nullable().defaultTo(null);
 
     table.json('data').nullable().defaultTo(null);
     table.string('title').nullable().defaultTo(null);

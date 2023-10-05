@@ -3,6 +3,7 @@ export interface Notification {
   userId: number;
   notificationTypeId: number;
   friendId: number | null;
+  snapSyncId: number | null;
 
   data: any | null;
   title: string | null;

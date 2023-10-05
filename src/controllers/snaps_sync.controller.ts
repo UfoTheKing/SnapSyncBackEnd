@@ -1,19 +1,20 @@
-import { RequestWithBlocked, RequestWithUser } from '@/interfaces/auth.interface';
+import { RequestWithBlocked, RequestWithFile, RequestWithUser } from '@/interfaces/auth.interface';
 import UserService from '@/services/users.service';
 import { NextFunction, Response } from 'express';
 import FriendshipStatusService from '@/services/friendship_status.service';
-import SnapInstanceService from '@/services/snaps_instances.service';
 import ExpoService from '@/services/expo.service';
 import { HttpException } from '@/exceptions/HttpException';
 import { MissingParamsException } from '@/exceptions/MissingParamsException';
-import { CreateSnapInstanceDto } from '@/dtos/snaps_instances.dto';
 import WebSocket from 'ws';
 import { WEBSOCKET_HOST } from '@/config';
 import { WssMessage, WssSystemMessage } from '@/interfaces/project/wss.interface';
 import WebsocketTokenService from '@/services/websocket_tokens.service';
 import SnapSyncService from '@/services/snaps_sync.service';
 import { WssActions } from '@/utils/enums';
-import { CreateSnapInstanceUserDto } from '@/dtos/snaps_instances_users.dto';
+import { ApiCodes } from '@/utils/apiCodes';
+import { CreateSnapSyncUserDto } from '@/dtos/snaps_sync_users.dto';
+import { CreateSnaSyncDto, TakeSnapDto } from '@/dtos/snaps_sync.dto';
+import { boolean } from 'boolean';
 
 class SnapsSyncController {
   private wsConnection: WebSocket | null = null;
@@ -21,7 +22,6 @@ class SnapsSyncController {
 
   public userService = new UserService();
   public friendshipStatusService = new FriendshipStatusService();
-  public snapInstanceService = new SnapInstanceService();
   public expoService = new ExpoService();
   public websocketTokenService = new WebsocketTokenService();
   public snapSyncService = new SnapSyncService();
@@ -94,31 +94,31 @@ class SnapsSyncController {
       if (user.id === req.user.id) throw new HttpException(400, "You can't create a SnapSync with yourself");
 
       const friendship_status = await this.friendshipStatusService.getFriendshipStatus(req.user.id, user.id);
-      if (!friendship_status.isFriend) throw new HttpException(400, 'Ops! You are not friends');
+      if (!friendship_status.isFriend) throw new HttpException(400, `You and ${user.username} are not friends`);
       if (friendship_status.isBlocking) throw new HttpException(400, 'Ops! You have blocked this user');
 
-      const snapSyncUserOwner: CreateSnapInstanceUserDto = {
+      const snapSyncUserOwner: CreateSnapSyncUserDto = {
         userId: req.user.id,
         isOwner: true,
-        snapInstanceId: 0, // Lo setto dopo
+        snapSyncId: 0, // Lo setto dopo
       };
-      const snapSyncUserJoined: CreateSnapInstanceUserDto = {
+      const snapSyncUserJoined: CreateSnapSyncUserDto = {
         userId: user.id,
         isOwner: false,
-        snapInstanceId: 0, // Lo setto dopo
+        snapSyncId: 0, // Lo setto dopo
       };
 
-      const data: CreateSnapInstanceDto = {
+      const data: CreateSnaSyncDto = {
         userId: req.user.id,
       };
 
-      const snapInstance = await this.snapInstanceService.createSnapInstance(data, [snapSyncUserOwner, snapSyncUserJoined]);
+      const { snap, notification } = await this.snapSyncService.createSnapSync(data, [snapSyncUserOwner, snapSyncUserJoined]);
 
       // Mando un messaggio al WebSocket
       let wssMessage: WssMessage = {
         action: WssActions.CREATE_SNAP_INSTANCE,
         data: {
-          key: snapInstance.instanceKey,
+          key: snap.instanceKey,
         },
       };
 
@@ -138,13 +138,141 @@ class SnapsSyncController {
       }
 
       // Mando una notifica push all'utente invitato
-      await this.expoService.sendSnapSyncNotification(snapInstance.instanceKey, [user.id], req.user);
+      await this.expoService.sendSnapSyncNotification(notification, req.user, snap.instanceKey);
 
-      res.status(200).json({ message: 'ok', key: snapInstance.instanceKey });
+      res.status(200).json({ message: 'ok' });
     } catch (error) {
       next(error);
     }
   };
+
+  public takeSnap = async (req: RequestWithUser & RequestWithFile, res: Response, next: NextFunction) => {
+    let globalKey: string | null = null;
+    try {
+      if (!this.wsConnection || this.wsConnection.readyState !== WebSocket.OPEN) {
+        throw new HttpException(500, 'WebSocket connection not open');
+      }
+
+      if (!this.isSystemLoggedIn) {
+        throw new HttpException(500, 'WebSocket system not logged in');
+      }
+
+      if (!req.file) throw new HttpException(422, 'File not found');
+      if (!req.file.buffer) throw new HttpException(422, 'File buffer not found');
+
+      if (!req.params.key) throw new MissingParamsException('key');
+
+      const key = req.params.key;
+      if (typeof key !== 'string') throw new HttpException(422, 'Key must be a string');
+      const snapSync = await this.snapSyncService.findSnapSyncByKey(key);
+      if (!snapSync) throw new HttpException(404, 'SnapSync not found');
+      if (boolean(snapSync.isPublished)) throw new HttpException(400, 'Ops! This SnapSync is already published');
+
+      globalKey = key;
+
+      const data: TakeSnapDto = {
+        userId: req.user.id,
+        snapSyncId: snapSync.id,
+        file: req.file,
+      };
+
+      const { allUsersSnapped } = await this.snapSyncService.takeSnap(data);
+
+      if (allUsersSnapped) {
+        // Faccio mandare al websocket un messaggio per mostarare l'anteprima
+        let wssMessage: WssMessage = {
+          action: WssActions.SHOW_SNAP_PREVIEW,
+          data: {
+            key: key,
+          },
+        };
+
+        this.wsConnection.send(JSON.stringify(wssMessage));
+
+        // Aspetto la risposta dal WebSocket
+        const response = (await new Promise(resolve => {
+          this.wsConnection.once('message', data => {
+            resolve(JSON.parse(data.toString()));
+          });
+        })) as WssSystemMessage;
+
+        // console.log(response);
+
+        if (!response || !response.success) {
+          throw new HttpException(500, 'Ops! Something went wrong', null, ApiCodes.DeleteSnap);
+        }
+      }
+
+      res.status(200).json({ message: 'ok' });
+    } catch (error) {
+      if (error && error instanceof HttpException && error.apiCode === ApiCodes.DeleteSnap) {
+        await this.sendErrorSnapWssMessage(globalKey);
+      }
+
+      next(error);
+    }
+  };
+
+  // public publishSnap = async (req: RequestWithUser, res: Response, next: NextFunction) => {
+  //   let globalKey: string | null = null;
+  //   try {
+  //     if (!this.wsConnection || this.wsConnection.readyState !== WebSocket.OPEN) {
+  //       throw new HttpException(500, 'WebSocket connection not open');
+  //     }
+
+  //     if (!this.isSystemLoggedIn) {
+  //       throw new HttpException(500, 'WebSocket system not logged in');
+  //     }
+
+  //     if (!req.params.key) throw new MissingParamsException('key');
+  //     if (typeof req.params.key !== 'string') throw new HttpException(422, 'Key must be a string');
+
+  //     const key = req.params.key;
+  //     const snapInstance = await this.snapInstanceService.findSnapInstanceByKey(key);
+  //     if (!snapInstance) throw new HttpException(404, 'SnapSync not found');
+  //     if (snapInstance.userId !== req.user.id) throw new HttpException(400, 'Ops! You are not the owner of this SnapSync');
+
+  //     globalKey = snapInstance.instanceKey;
+
+  //     const data: PublishSnapDto = {
+  //       userId: req.user.id,
+  //       snapInstanceId: snapInstance.id,
+  //     };
+
+  //     await this.snapInstanceService.publishSnap(data);
+
+  //     // Faccio mandare al websocket un messaggio per farli chiudere l'anteprima
+  //     let wssMessage: WssMessage = {
+  //       action: WssActions.PUBLISH_SNAP,
+  //       data: {
+  //         key: key,
+  //       },
+  //     };
+
+  //     this.wsConnection.send(JSON.stringify(wssMessage));
+
+  //     // Aspetto la risposta dal WebSocket
+  //     const response = (await new Promise(resolve => {
+  //       this.wsConnection.once('message', data => {
+  //         resolve(JSON.parse(data.toString()));
+  //       });
+  //     })) as WssSystemMessage;
+
+  //     // console.log(response);
+
+  //     if (!response || !response.success) {
+  //       throw new HttpException(500, 'Ops! Something went wrong', null, ApiCodes.DeleteSnap);
+  //     }
+
+  //     res.status(200).json({ message: 'ok' });
+  //   } catch (error) {
+  //     // console.log(error, globalKey);
+  //     if (error && error instanceof HttpException && error.apiCode === ApiCodes.DeleteSnap) {
+  //       await this.sendErrorSnapWssMessage(globalKey);
+  //     }
+  //     next(error);
+  //   }
+  // };
 
   private sendErrorSnapWssMessage = async (key: string | null): Promise<void> => {
     if (this.wsConnection && this.wsConnection.readyState === WebSocket.OPEN && this.isSystemLoggedIn && key) {

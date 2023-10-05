@@ -7,6 +7,7 @@ export enum FriendshipStatus {
 export enum NotificationType {
   FriendRequestReceived = 'FriendRequestReceived',
   FriendRequestAccepted = 'FriendRequestAccepted',
+  SnapSyncRequestReceived = 'SnapSyncRequestReceived',
 }
 
 export enum WssActions {
@@ -19,7 +20,7 @@ export enum WssActions {
   JOIN_SNAP_INSTANCE = 'JOIN_SNAP_INSTANCE',
   LEAVE_SNAP_INSTANCE = 'LEAVE_SNAP_INSTANCE',
 
-  SEND_SNAP = 'SEND_SNAP',
+  SHOW_SNAP_PREVIEW = 'SHOW_SNAP_PREVIEW',
   PUBLISH_SNAP = 'PUBLISH_SNAP',
 
   ERROR_SNAP = 'ERROR_SNAP',

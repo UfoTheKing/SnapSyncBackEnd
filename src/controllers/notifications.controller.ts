@@ -2,20 +2,23 @@ import { CreateExpoPushTokenDto } from '@/dtos/expo_push_tokens.dto';
 import { HttpException } from '@/exceptions/HttpException';
 import { RequestWithDevice, RequestWithUser } from '@/interfaces/auth.interface';
 import ExpoPushTokenService from '@/services/expo_push_tokens.service';
+import NotificationService from '@/services/notifications.service';
 import { NextFunction, Response } from 'express';
 import * as yup from 'yup';
 
 class NotificationsController {
   public expoPushTokenService = new ExpoPushTokenService();
+  public notificationService = new NotificationService();
 
   public getNotificationsBadge = async (req: RequestWithUser, res: Response, next: NextFunction) => {
     try {
-      let response = {
-        totalCount: 0,
-        message: 'ok',
-      };
+      let totalCount = await this.notificationService.findUnreadNotificationsCountByUserId(req.user.id);
+      let badge = await this.notificationService.findActivityBadgeCountsByUserId(req.user.id);
 
-      res.status(200).json(response);
+      res.status(200).json({
+        activityBadgeCounts: badge,
+        totalCount: totalCount,
+      });
     } catch (error) {
       next(error);
     }

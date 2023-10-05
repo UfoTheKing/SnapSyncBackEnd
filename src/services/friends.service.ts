@@ -34,7 +34,9 @@ class FriendService {
     let offsetRows = (page - 1) * count;
     let limitRows = count;
 
-    const results = await knex.raw(`CALL ${StoredProcedureName}(${loggedUserId}, ${limitRows}, ${offsetRows}, ${query ? "'" + query + "'" : null})`);
+    const results = await knex.raw(
+      `CALL ${StoredProcedureName}(${loggedUserId}, ${limitRows}, ${offsetRows}, ${query ? "'" + query + "'" : null}, ${includeStreak ? 1 : 0})`,
+    );
 
     let responseResults: Array<{
       userId: number;
@@ -470,16 +472,32 @@ class FriendService {
       })
       .first();
 
-    await Friends.query().patchAndFetchById(findFriendship.id, {
-      friendshipStatusId: rejectedFriendshipStatus.id,
+    const trx = await Friends.startTransaction();
 
-      rejectedAt: new Date(),
+    try {
+      await Friends.query(trx).patchAndFetchById(findFriendship.id, {
+        friendshipStatusId: rejectedFriendshipStatus.id,
 
-      updatedAt: new Date(),
-    });
+        rejectedAt: new Date(),
 
-    // La posso anche cancellare
-    await Friends.query().deleteById(findFriendship.id);
+        updatedAt: new Date(),
+      });
+
+      // La posso anche cancellare
+      await Friends.query(trx).deleteById(findFriendship.id);
+
+      // Elimino anche tutte le notifiche correlate
+      await Notifications.query(trx).delete().where({
+        friendId: findFriendship.id,
+      });
+
+      await trx.commit();
+
+      return;
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
   };
 
   public destroyFriendship = async (userId: number, friendId: number): Promise<void> => {
@@ -499,7 +517,25 @@ class FriendService {
       .first();
     if (!findFriendship) throw new HttpException(404, 'Ops! There is no friendship');
 
-    await Friends.query().deleteById(findFriendship.id);
+    const trx = await Friends.startTransaction();
+
+    try {
+      await Friends.query().deleteById(findFriendship.id);
+
+      // Elimino anche tutte le notifiche correlate
+      await Notifications.query(trx).delete().where({
+        friendId: findFriendship.id,
+      });
+
+      // TODO: Se era accettata controllare se devo eliminare degli SnapSync
+
+      await trx.commit();
+
+      return;
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
   };
 
   public async areFriends(

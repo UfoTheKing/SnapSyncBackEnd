@@ -4,6 +4,11 @@ export interface SnapSyncUser {
   snapSyncId: number;
   locationId: number | null;
 
+  isOwner: boolean;
+
+  isJoined: boolean;
+  joinedAt: Date | null;
+
   s3ImageKey: string;
   snappedAt: Date;
 

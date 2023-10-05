@@ -4,7 +4,6 @@ import SnapsSyncController from '@/controllers/snaps_sync.controller';
 import multer from 'multer';
 import { HttpException } from '@/exceptions/HttpException';
 import authMiddleware from '@/middlewares/auth.middleware';
-import privateMiddleware from '@/middlewares/private.middleware';
 import blockedMiddleware from '@/middlewares/blocked.middleware';
 
 const storage = multer.memoryStorage({
@@ -43,8 +42,7 @@ class SnapsSyncRoute implements Routes {
     // this.router.get(`${this.path}/:id/comments/:commentId/child_comments`, authMiddleware, this.snapsSyncController.getChildComments);
 
     this.router.post(`${this.path}/create/:userId`, authMiddleware, blockedMiddleware, this.snapsSyncController.createSnapInstance);
-
-    // this.router.post(`${this.path}/:key/take_snap`, authMiddleware, upload.single('snap'), this.snapsSyncController.takeSnap);
+    this.router.post(`${this.path}/:key/take_snap`, authMiddleware, upload.single('snap'), this.snapsSyncController.takeSnap);
     // this.router.post(`${this.path}/:key/publish`, authMiddleware, this.snapsSyncController.publishSnap);
   }
 }

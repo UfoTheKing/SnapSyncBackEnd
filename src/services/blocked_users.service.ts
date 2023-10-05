@@ -10,6 +10,7 @@ import { Friends } from '@/models/friends.model';
 import FriendService from './friends.service';
 import { SmallUser } from '@/interfaces/users.interface';
 import UserService from './users.service';
+import { Notifications } from '@/models/notifications.model';
 
 class BlockedUserService {
   public findLoggedUserBlockedUsers = async (
@@ -90,7 +91,16 @@ class BlockedUserService {
         // Elimino tutti i record nella tabella dove friendshipHash = LOWEST(USERID, FRIENDID)_HIGHEST(USERID, FRIENDID)
         let friendshipHash = new FriendService().generateFriendshipHash(findUser.id, findBlockedUser.id);
 
-        await Friends.query(trx).whereNotDeleted().where('friendshipHash', friendshipHash).delete();
+        const friend = await Friends.query(trx).whereNotDeleted().where('friendshipHash', friendshipHash).first();
+        if (friend) {
+          await Friends.query(trx).whereNotDeleted().where('friendshipHash', friendshipHash).delete();
+          await Notifications.query(trx)
+            .whereNotDeleted()
+            .where({
+              friendId: friend.id,
+            })
+            .delete();
+        }
       }
 
       // Elimino le snaps_instances dove userId = findUser.id e memberId = findBlockedUser.id
